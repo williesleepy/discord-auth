@@ -6,22 +6,35 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const login = () => {
-    window.location.href = `${API}/login`;
-  };
-
   useEffect(() => {
+    const tokenFromUrl = getTokenFromUrl();
+
+    if (tokenFromUrl) {
+      localStorage.setItem("token", tokenFromUrl);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+
     fetch(`${API}/me`, {
-      credentials: "include",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
     })
-      .then((res) => {
-        if (!res.ok) throw new Error();
-        return res.json();
-      })
-      .then((data) => setUser(data))
+      .then((res) => res.json())
+      .then(setUser)
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
   }, []);
+
+  const login = () => {
+    window.location.href = `${API}/login`;
+  };
 
   if (loading) return <div>Loading...</div>;
 
@@ -29,10 +42,11 @@ export default function App() {
     return <button onClick={login}>Login with Discord</button>;
   }
 
-  return (
-    <div>
-      <h1>Welcome {user.username}</h1>
-      <p>ID: {user.id}</p>
-    </div>
-  );
+  return <div>Welcome {user.username}</div>;
+}
+
+function getTokenFromUrl() {
+  const hash = window.location.hash;
+  const params = new URLSearchParams(hash.replace("#", ""));
+  return params.get("token");
 }
