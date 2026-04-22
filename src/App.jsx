@@ -4,8 +4,11 @@ const API = "https://discord-auth.williesleepy.workers.dev";
 
 export default function App() {
   const [user, setUser] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
 
+  // Handle auth + load data
   useEffect(() => {
     const tokenFromUrl = getTokenFromUrl();
 
@@ -21,6 +24,7 @@ export default function App() {
       return;
     }
 
+    // Fetch user
     fetch(`${API}/me`, {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -28,12 +32,49 @@ export default function App() {
     })
       .then((res) => res.json())
       .then(setUser)
-      .catch(() => setUser(null))
+      .catch(() => setUser(null));
+
+    // Fetch messages
+    fetch(`${API}/messages`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+      .then((res) => res.json())
+      .then(setMessages)
+      .catch(() => setMessages([]))
       .finally(() => setLoading(false));
   }, []);
 
   const login = () => {
     window.location.href = `${API}/login`;
+  };
+
+  const sendMessage = async () => {
+    const token = localStorage.getItem("token");
+
+    await fetch(`${API}/send`, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        message: input,
+      }),
+      method: "POST",
+    });
+
+    setInput("");
+
+    // refresh messages
+    const res = await fetch(`${API}/messages`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const data = await res.json();
+    setMessages(data);
   };
 
   if (loading) return <div>Loading...</div>;
@@ -42,7 +83,27 @@ export default function App() {
     return <button onClick={login}>Login with Discord</button>;
   }
 
-  return <div>Welcome {user.username}</div>;
+  return (
+    <div>
+      <h2>Welcome {user.username}</h2>
+
+      <div style={{ marginTop: 20 }}>
+        <input
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Type message"
+          value={input}
+        />
+        <button onClick={sendMessage}>Send</button>
+      </div>
+
+      <div style={{ marginTop: 20 }}>
+        <h3>Messages</h3>
+        {messages.map((msg) => (
+          <div key={msg.id}>{msg.content}</div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function getTokenFromUrl() {
