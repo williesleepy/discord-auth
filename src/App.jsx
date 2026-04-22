@@ -8,7 +8,6 @@ export default function App() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // Handle auth + load data
   useEffect(() => {
     const tokenFromUrl = getTokenFromUrl();
 
@@ -24,26 +23,47 @@ export default function App() {
       return;
     }
 
-    // Fetch user
-    fetch(`${API}/me`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    })
-      .then((res) => res.json())
-      .then(setUser)
-      .catch(() => setUser(null));
+    async function load() {
+      try {
+        // 🔐 Step 1: verify auth
+        const userRes = await fetch(`${API}/me`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
-    // Fetch messages
-    fetch(`${API}/messages`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    })
-      .then((res) => res.json())
-      .then(setMessages)
-      .catch(() => setMessages([]))
-      .finally(() => setLoading(false));
+        if (!userRes.ok) {
+          const text = await userRes.text();
+          throw new Error(text);
+        }
+
+        const userData = await userRes.json();
+        setUser(userData);
+
+        // 📥 Step 2: fetch messages
+        const msgRes = await fetch(`${API}/messages`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!msgRes.ok) {
+          const text = await msgRes.text();
+          throw new Error(text);
+        }
+
+        const msgData = await msgRes.json();
+        setMessages(msgData);
+      } catch (err) {
+        console.error("Load failed:", err);
+        setUser(null);
+        setMessages([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    load();
   }, []);
 
   const login = () => {
@@ -52,29 +72,44 @@ export default function App() {
 
   const sendMessage = async () => {
     const token = localStorage.getItem("token");
+    if (!token || !input.trim()) return;
 
-    await fetch(`${API}/send`, {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        message: input,
-      }),
-      method: "POST",
-    });
+    try {
+      const res = await fetch(`${API}/send`, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          message: input,
+        }),
+        method: "POST",
+      });
 
-    setInput("");
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text);
+      }
 
-    // refresh messages
-    const res = await fetch(`${API}/messages`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+      setInput("");
 
-    const data = await res.json();
-    setMessages(data);
+      // 🔄 refresh messages after send
+      const msgRes = await fetch(`${API}/messages`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!msgRes.ok) {
+        const text = await msgRes.text();
+        throw new Error(text);
+      }
+
+      const msgData = await msgRes.json();
+      setMessages(msgData);
+    } catch (err) {
+      console.error("Send failed:", err);
+    }
   };
 
   if (loading) return <div>Loading...</div>;
@@ -84,7 +119,7 @@ export default function App() {
   }
 
   return (
-    <div>
+    <div style={{ padding: 20 }}>
       <h2>Welcome {user.username}</h2>
 
       <div style={{ marginTop: 20 }}>
