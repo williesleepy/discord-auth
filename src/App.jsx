@@ -2,9 +2,6 @@ import { useEffect, useState } from "react";
 
 const API = "https://discord-auth.williesleepy.workers.dev";
 
-// ------------------------
-// App
-// ------------------------
 export default function App() {
   const [user, setUser] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -29,34 +26,24 @@ export default function App() {
     async function load() {
       try {
         const userRes = await fetch(`${API}/me`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
         });
 
-        if (!userRes.ok) {
-          const text = await userRes.text();
-          throw new Error(text);
-        }
+        if (!userRes.ok) throw new Error("auth failed");
 
         const userData = await userRes.json();
         setUser(userData);
 
         const msgRes = await fetch(`${API}/messages`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
         });
 
-        if (!msgRes.ok) {
-          const text = await msgRes.text();
-          throw new Error(text);
-        }
+        if (!msgRes.ok) throw new Error("messages failed");
 
         const msgData = await msgRes.json();
         setMessages(msgData);
       } catch (err) {
-        console.error("Load failed:", err);
+        console.error(err);
         setUser(null);
         setMessages([]);
       } finally {
@@ -74,48 +61,26 @@ export default function App() {
   const sendMessage = async () => {
     const token = getToken();
 
-    // 🔍 DEBUG LINE
-    console.log("TOKEN USED IN SEND:", token);
-
-    if (!token) {
-      console.error("No valid token");
-      return;
-    }
-
-    if (!input.trim()) return;
+    if (!token || !input.trim()) return;
 
     try {
-      const sendRes = await fetch(`${API}/send`, {
+      await fetch(`${API}/send`, {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          message: input,
-        }),
+        body: JSON.stringify({ message: input }),
         method: "POST",
       });
 
-      if (!sendRes.ok) {
-        const text = await sendRes.text();
-        throw new Error(text);
-      }
-
       setInput("");
 
-      const msgRes = await fetch(`${API}/messages`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      const res = await fetch(`${API}/messages`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
 
-      if (!msgRes.ok) {
-        const text = await msgRes.text();
-        throw new Error(text);
-      }
-
-      const msgData = await msgRes.json();
-      setMessages(msgData);
+      const data = await res.json();
+      setMessages(data);
     } catch (err) {
       console.error("Send failed:", err);
     }
@@ -158,9 +123,6 @@ function getToken() {
   return token;
 }
 
-// ------------------------
-// Helpers
-// ------------------------
 function getTokenFromUrl() {
   const hash = window.location.hash;
   const params = new URLSearchParams(hash.replace("#", ""));
