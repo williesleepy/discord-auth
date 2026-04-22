@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 
 const API = "https://discord-auth.williesleepy.workers.dev";
 
+// ------------------------
+// App
+// ------------------------
 export default function App() {
   const [user, setUser] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -16,7 +19,7 @@ export default function App() {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
 
-    const token = localStorage.getItem("token");
+    const token = getToken();
 
     if (!token) {
       setLoading(false);
@@ -25,7 +28,6 @@ export default function App() {
 
     async function load() {
       try {
-        // 🔐 Step 1: verify auth
         const userRes = await fetch(`${API}/me`, {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -40,7 +42,6 @@ export default function App() {
         const userData = await userRes.json();
         setUser(userData);
 
-        // 📥 Step 2: fetch messages
         const msgRes = await fetch(`${API}/messages`, {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -71,11 +72,20 @@ export default function App() {
   };
 
   const sendMessage = async () => {
-    const token = localStorage.getItem("token");
-    if (!token || !input.trim()) return;
+    const token = getToken();
+
+    // 🔍 DEBUG LINE
+    console.log("TOKEN USED IN SEND:", token);
+
+    if (!token) {
+      console.error("No valid token");
+      return;
+    }
+
+    if (!input.trim()) return;
 
     try {
-      const res = await fetch(`${API}/send`, {
+      const sendRes = await fetch(`${API}/send`, {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
@@ -86,14 +96,13 @@ export default function App() {
         method: "POST",
       });
 
-      if (!res.ok) {
-        const text = await res.text();
+      if (!sendRes.ok) {
+        const text = await sendRes.text();
         throw new Error(text);
       }
 
       setInput("");
 
-      // 🔄 refresh messages after send
       const msgRes = await fetch(`${API}/messages`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -141,6 +150,17 @@ export default function App() {
   );
 }
 
+function getToken() {
+  const token = localStorage.getItem("token");
+  if (!token || token === "null" || token === "undefined") {
+    return null;
+  }
+  return token;
+}
+
+// ------------------------
+// Helpers
+// ------------------------
 function getTokenFromUrl() {
   const hash = window.location.hash;
   const params = new URLSearchParams(hash.replace("#", ""));
