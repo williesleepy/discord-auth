@@ -1,0 +1,11 @@
+body {
+  /* background:
+    linear-gradient(rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.5)),
+    url("hollow-bastion.png");
+  background-image: url("hollow-bastion.png");
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed; */
+  overflow-y: scroll;
+}
