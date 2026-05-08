@@ -73,8 +73,8 @@ export default function App() {
 
       const msgData = await msgRes.json();
 
-      // newest at bottom
-      setMessages(msgData.reverse());
+      // Discord already returns newest -> oldest
+      setMessages(msgData);
     } catch (err) {
       console.error(err);
       setUser(null);
