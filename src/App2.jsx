@@ -124,12 +124,14 @@ export default function App() {
     if (!token) return;
 
     if (!isImageFile(item.name)) {
-      window.open(item.filelink || "#", "_blank");
+      console.warn("Preview only supports images right now:", item.name);
       return;
     }
 
     try {
-      const filePath = item.path || buildPath(pcloudPath, item.name);
+      const filePath = buildPath(pcloudPath, item.name);
+
+      console.log("Fetching pCloud preview:", filePath);
 
       const res = await fetch(
         `${API}/pcloud/file?path=${encodeURIComponent(filePath)}`,
@@ -140,8 +142,12 @@ export default function App() {
         },
       );
 
+      console.log("status:", res.status);
+      console.log("content-type:", res.headers.get("Content-Type"));
+
       if (!res.ok) {
-        throw new Error("pCloud file fetch failed");
+        const text = await res.text();
+        throw new Error(text);
       }
 
       const blob = await res.blob();
@@ -154,9 +160,49 @@ export default function App() {
       setPreviewUrl(url);
       setPreviewName(item.name);
     } catch (err) {
-      console.error(err);
+      console.error("Preview failed:", err);
     }
   }
+
+  //   async function renderPcloudFile(item) {
+  //     const token = getToken();
+
+  //     if (!token) return;
+
+  //     if (!isImageFile(item.name)) {
+  //       window.open(item.filelink || "#", "_blank");
+  //       return;
+  //     }
+
+  //     try {
+  //       const filePath = item.path || buildPath(pcloudPath, item.name);
+
+  //       const res = await fetch(
+  //         `${API}/pcloud/file?path=${encodeURIComponent(filePath)}`,
+  //         {
+  //           headers: {
+  //             Authorization: `Bearer ${token}`,
+  //           },
+  //         },
+  //       );
+
+  //       if (!res.ok) {
+  //         throw new Error("pCloud file fetch failed");
+  //       }
+
+  //       const blob = await res.blob();
+  //       const url = URL.createObjectURL(blob);
+
+  //       if (previewUrl) {
+  //         URL.revokeObjectURL(previewUrl);
+  //       }
+
+  //       setPreviewUrl(url);
+  //       setPreviewName(item.name);
+  //     } catch (err) {
+  //       console.error(err);
+  //     }
+  //   }
 
   const login = () => {
     window.location.href = `${API}/login`;
