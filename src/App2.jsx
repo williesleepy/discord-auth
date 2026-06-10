@@ -2,9 +2,6 @@ import { useEffect, useState, useMemo } from "react";
 
 const API = "https://discord-auth.williesleepy.workers.dev";
 
-// ------------------------
-// App
-// ------------------------
 export default function App() {
   const [user, setUser] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -12,12 +9,15 @@ export default function App() {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // chat | gallery
   const [tab, setTab] = useState("chat");
 
-  // ------------------------
-  // Initial Load
-  // ------------------------
+  const [pcloudPath, setPcloudPath] = useState("/");
+  const [pcloudContents, setPcloudContents] = useState([]);
+  const [pcloudSearch, setPcloudSearch] = useState("");
+  const [pcloudLoading, setPcloudLoading] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [previewName, setPreviewName] = useState("");
+
   useEffect(() => {
     const tokenFromUrl = getTokenFromUrl();
 
@@ -37,16 +37,18 @@ export default function App() {
     load();
   }, []);
 
-  // ------------------------
-  // Load
-  // ------------------------
+  useEffect(() => {
+    if (tab === "pcloud" && user) {
+      loadPcloudFolder(pcloudPath);
+    }
+  }, [tab, pcloudPath, user]);
+
   async function load() {
     const token = getToken();
 
     if (!token) return;
 
     try {
-      // user
       const userRes = await fetch(`${API}/me`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -60,7 +62,6 @@ export default function App() {
       const userData = await userRes.json();
       setUser(userData);
 
-      // messages
       const msgRes = await fetch(`${API}/messages`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -72,8 +73,6 @@ export default function App() {
       }
 
       const msgData = await msgRes.json();
-
-      // Discord already returns newest -> oldest
       setMessages(msgData);
     } catch (err) {
       console.error(err);
@@ -84,21 +83,89 @@ export default function App() {
     }
   }
 
-  // ------------------------
-  // Login
-  // ------------------------
-  const login = () => {
-    window.location.href = `${API}/login`;
-  };
-
-  // ------------------------
-  // Send
-  // ------------------------
-  const sendMessage = async () => {
+  async function loadPcloudFolder(path) {
     const token = getToken();
 
     if (!token) return;
 
+    setPcloudLoading(true);
+    setPreviewUrl(null);
+    setPreviewName("");
+
+    try {
+      const res = await fetch(
+        `${API}/pcloud/list?folder=${encodeURIComponent(path)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!res.ok) {
+        throw new Error("pCloud folder fetch failed");
+      }
+
+      const data = await res.json();
+      const contents = data.metadata?.contents || [];
+
+      setPcloudContents(contents);
+    } catch (err) {
+      console.error(err);
+      setPcloudContents([]);
+    } finally {
+      setPcloudLoading(false);
+    }
+  }
+
+  async function renderPcloudFile(item) {
+    const token = getToken();
+
+    if (!token) return;
+
+    if (!isImageFile(item.name)) {
+      window.open(item.filelink || "#", "_blank");
+      return;
+    }
+
+    try {
+      const filePath = item.path || buildPath(pcloudPath, item.name);
+
+      const res = await fetch(
+        `${API}/pcloud/file?path=${encodeURIComponent(filePath)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!res.ok) {
+        throw new Error("pCloud file fetch failed");
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+
+      setPreviewUrl(url);
+      setPreviewName(item.name);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  const login = () => {
+    window.location.href = `${API}/login`;
+  };
+
+  const sendMessage = async () => {
+    const token = getToken();
+
+    if (!token) return;
     if (!input.trim() && !file) return;
 
     try {
@@ -127,9 +194,6 @@ export default function App() {
     }
   };
 
-  // ------------------------
-  // Gallery Images
-  // ------------------------
   const images = useMemo(() => {
     return messages.flatMap((msg) =>
       (msg.attachments || [])
@@ -145,9 +209,19 @@ export default function App() {
     );
   }, [messages]);
 
-  // ------------------------
-  // UI
-  // ------------------------
+  const filteredPcloudContents = useMemo(() => {
+    const q = pcloudSearch.trim().toLowerCase();
+
+    if (!q) return pcloudContents;
+
+    return pcloudContents.filter((item) =>
+      item.name?.toLowerCase().includes(q),
+    );
+  }, [pcloudContents, pcloudSearch]);
+
+  const pcloudFolders = filteredPcloudContents.filter((item) => item.isfolder);
+  const pcloudFiles = filteredPcloudContents.filter((item) => !item.isfolder);
+
   if (loading) {
     return <div>Loading...</div>;
   }
@@ -160,7 +234,6 @@ export default function App() {
     <div style={{ padding: 20 }}>
       <h2>Welcome {user.username}</h2>
 
-      {/* Tabs */}
       <div
         style={{
           marginBottom: 20,
@@ -170,14 +243,12 @@ export default function App() {
         }}
       >
         <button onClick={() => setTab("chat")}>Chat</button>
-
         <button onClick={() => setTab("gallery")}>Gallery</button>
+        <button onClick={() => setTab("pcloud")}>pCloud</button>
       </div>
 
-      {/* CHAT TAB */}
       {tab === "chat" && (
         <>
-          {/* Send UI */}
           <div style={{ marginBottom: 30 }}>
             <input
               onChange={(e) => setInput(e.target.value)}
@@ -190,7 +261,6 @@ export default function App() {
             <button onClick={sendMessage}>Send</button>
           </div>
 
-          {/* Messages */}
           <div>
             <h3>Messages</h3>
 
@@ -204,17 +274,10 @@ export default function App() {
                 }}
                 key={msg.id}
               >
-                {/* Username */}
-                <div
-                  style={{
-                    fontWeight: "bold",
-                    marginBottom: 6,
-                  }}
-                >
+                <div style={{ fontWeight: "bold", marginBottom: 6 }}>
                   {msg.author?.username}
                 </div>
 
-                {/* Timestamp */}
                 <div
                   style={{
                     marginBottom: 10,
@@ -225,16 +288,13 @@ export default function App() {
                   {new Date(msg.timestamp).toLocaleString()}
                 </div>
 
-                {/* Text */}
                 {msg.content && (
                   <div style={{ marginBottom: 10 }}>{msg.content}</div>
                 )}
 
-                {/* Attachments */}
                 {msg.attachments?.map((att) => {
                   const isImage = att.content_type?.startsWith("image/");
 
-                  // image
                   if (isImage) {
                     return (
                       <img
@@ -251,7 +311,6 @@ export default function App() {
                     );
                   }
 
-                  // non-image
                   return (
                     <div style={{ marginTop: 10 }} key={att.id}>
                       <a rel="noreferrer" target="_blank" href={att.url}>
@@ -266,7 +325,6 @@ export default function App() {
         </>
       )}
 
-      {/* GALLERY TAB */}
       {tab === "gallery" && (
         <div>
           <h3>Image Gallery</h3>
@@ -288,7 +346,6 @@ export default function App() {
                 }}
                 key={img.id}
               >
-                {/* Image */}
                 <img
                   style={{
                     display: "block",
@@ -299,17 +356,10 @@ export default function App() {
                   src={img.url}
                 />
 
-                {/* Author */}
-                <div
-                  style={{
-                    fontWeight: "bold",
-                    marginTop: 10,
-                  }}
-                >
+                <div style={{ fontWeight: "bold", marginTop: 10 }}>
                   {img.author}
                 </div>
 
-                {/* Timestamp */}
                 <div
                   style={{
                     fontSize: 12,
@@ -320,7 +370,6 @@ export default function App() {
                   {new Date(img.timestamp).toLocaleString()}
                 </div>
 
-                {/* Caption / Message */}
                 {img.content && (
                   <div style={{ marginTop: 8 }}>{img.content}</div>
                 )}
@@ -329,8 +378,149 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {tab === "pcloud" && (
+        <div>
+          <h3>pCloud File Explorer</h3>
+
+          <div style={{ marginBottom: 12 }}>
+            {getBreadcrumbs(pcloudPath).map((crumb, index, arr) => (
+              <span key={crumb.path}>
+                <button
+                  onClick={() => {
+                    setPcloudPath(crumb.path);
+                    setPcloudSearch("");
+                  }}
+                >
+                  {crumb.label}
+                </button>
+                {index < arr.length - 1 && <span> / </span>}
+              </span>
+            ))}
+          </div>
+
+          <input
+            onChange={(e) => setPcloudSearch(e.target.value)}
+            style={{ marginBottom: 20, display: "block" }}
+            placeholder="Search current folder"
+            value={pcloudSearch}
+          />
+
+          {pcloudLoading && <div>Loading pCloud folder...</div>}
+
+          {!pcloudLoading && (
+            <div
+              style={{
+                gridTemplateColumns: "1fr 1fr",
+                display: "grid",
+                gap: 20,
+              }}
+            >
+              <div>
+                <h4>Folders</h4>
+
+                {pcloudFolders.length === 0 && <div>No folders</div>}
+
+                {pcloudFolders.map((folder) => {
+                  const folderPath =
+                    folder.path || buildPath(pcloudPath, folder.name);
+
+                  return (
+                    <div
+                      key={folder.folderid || folderPath}
+                      style={{ marginBottom: 8 }}
+                    >
+                      <button
+                        onClick={() => {
+                          setPcloudPath(folderPath);
+                          setPcloudSearch("");
+                        }}
+                      >
+                        📁 {folder.name}
+                      </button>
+                    </div>
+                  );
+                })}
+
+                <h4 style={{ marginTop: 24 }}>Files</h4>
+
+                {pcloudFiles.length === 0 && <div>No files</div>}
+
+                {pcloudFiles.map((item) => (
+                  <div
+                    style={{
+                      border: "1px solid #ccc",
+                      marginBottom: 8,
+                      borderRadius: 8,
+                      padding: 10,
+                    }}
+                    key={item.fileid || item.path || item.name}
+                  >
+                    <div>
+                      {isImageFile(item.name) ? "🖼️" : "📄"} {item.name}
+                    </div>
+
+                    {item.size && (
+                      <div style={{ fontSize: 12, opacity: 0.7 }}>
+                        {Math.round(item.size / 1024)} KB
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => renderPcloudFile(item)}
+                      style={{ marginTop: 8 }}
+                    >
+                      {isImageFile(item.name) ? "Preview" : "Open"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div>
+                <h4>Preview</h4>
+
+                {!previewUrl && <div>Select an image file to preview.</div>}
+
+                {previewUrl && (
+                  <div>
+                    <div style={{ fontWeight: "bold", marginBottom: 8 }}>
+                      {previewName}
+                    </div>
+
+                    <img
+                      style={{
+                        border: "1px solid #ccc",
+                        maxWidth: "100%",
+                        borderRadius: 8,
+                      }}
+                      alt={previewName}
+                      src={previewUrl}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+function getBreadcrumbs(path) {
+  if (path === "/") {
+    return [{ label: "Home", path: "/" }];
+  }
+
+  const parts = path.split("/").filter(Boolean);
+
+  return [
+    { label: "Home", path: "/" },
+    ...parts.map((part, index) => ({
+      path: "/" + parts.slice(0, index + 1).join("/"),
+      label: part,
+    })),
+  ];
 }
 
 function getToken() {
@@ -343,11 +533,17 @@ function getToken() {
   return token;
 }
 
-// ------------------------
-// Helpers
-// ------------------------
 function getTokenFromUrl() {
   const hash = window.location.hash;
   const params = new URLSearchParams(hash.replace("#", ""));
   return params.get("token");
+}
+
+function buildPath(parent, name) {
+  if (parent === "/") return `/${name}`;
+  return `${parent}/${name}`;
+}
+
+function isImageFile(name = "") {
+  return /\.(png|jpe?g|gif|webp|svg)$/i.test(name);
 }

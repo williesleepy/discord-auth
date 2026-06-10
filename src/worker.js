@@ -1,204 +1,322 @@
-/*
+// export default {
+//   async fetch(req, env) {
+//     const url = new URL(req.url);
 
-export default {
-  async fetch(req, env) {
-    const url = new URL(req.url);
+//     const corsHeaders = {
+//       "Access-Control-Allow-Origin": env.FRONTEND_ORIGIN,
+//       "Access-Control-Allow-Headers": "Content-Type, Authorization",
+//       "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+//     };
 
-    const corsHeaders = {
-      "Access-Control-Allow-Origin": env.FRONTEND_ORIGIN,
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    };
+//     if (req.method === "OPTIONS") {
+//       return new Response(null, { headers: corsHeaders });
+//     }
 
-    if (req.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders });
-    }
+//     async function getUser(token) {
+//       if (!token) return null;
 
-    // ------------------------
-    // Helpers
-    // ------------------------
-    async function getUser(token) {
-      if (!token) return null;
+//       const res = await fetch("https://discord.com/api/users/@me", {
+//         headers: {
+//           Authorization: `Bearer ${token}`,
+//         },
+//       });
 
-      const res = await fetch("https://discord.com/api/users/@me", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+//       if (!res.ok) return null;
+//       return res.json();
+//     }
 
-      if (!res.ok) return null;
-      return res.json();
-    }
+//     async function isInGuild(token) {
+//       const res = await fetch("https://discord.com/api/users/@me/guilds", {
+//         headers: {
+//           Authorization: `Bearer ${token}`,
+//         },
+//       });
 
-    async function isInGuild(token) {
-      const res = await fetch(
-        "https://discord.com/api/users/@me/guilds",
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+//       if (!res.ok) return false;
 
-      if (!res.ok) return false;
+//       const guilds = await res.json();
+//       return guilds.some((g) => g.id === env.GUILD_ID);
+//     }
 
-      const guilds = await res.json();
-      return guilds.some((g) => g.id === env.GUILD_ID);
-    }
+//     if (url.pathname === "/login") {
+//       const redirect =
+//         "https://discord.com/api/oauth2/authorize" +
+//         `?client_id=${env.CLIENT_ID}` +
+//         `&redirect_uri=${encodeURIComponent(env.REDIRECT_URI)}` +
+//         `&response_type=code` +
+//         `&scope=identify guilds`;
 
-    // ------------------------
-    // LOGIN
-    // ------------------------
-    if (url.pathname === "/login") {
-      const redirect =
-        "https://discord.com/api/oauth2/authorize" +
-        `?client_id=${env.CLIENT_ID}` +
-        `&redirect_uri=${encodeURIComponent(env.REDIRECT_URI)}` +
-        `&response_type=code` +
-        `&scope=identify guilds`;
+//       return Response.redirect(redirect, 302);
+//     }
 
-      return Response.redirect(redirect, 302);
-    }
+//     if (url.pathname === "/pcloud/login") {
+//       const redirect =
+//         "https://my.pcloud.com/oauth2/authorize" +
+//         `?client_id=${env.PCLOUD_CLIENT_ID}` +
+//         `&response_type=code` +
+//         `&redirect_uri=${encodeURIComponent(env.PCLOUD_REDIRECT_URI)}`;
 
-    // ------------------------
-    // CALLBACK (still checks guild)
-    // ------------------------
-    if (url.pathname === "/callback") {
-      const code = url.searchParams.get("code");
+//       return Response.redirect(redirect, 302);
+//     }
 
-      if (!code) {
-        return new Response("Missing code", { status: 400 });
-      }
+//     if (url.pathname === "/pcloud/callback") {
+//       const code = url.searchParams.get("code");
 
-      const tokenRes = await fetch("https://discord.com/api/oauth2/token", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          client_id: env.CLIENT_ID,
-          client_secret: env.CLIENT_SECRET,
-          grant_type: "authorization_code",
-          code,
-          redirect_uri: env.REDIRECT_URI,
-        }),
-      });
+//       if (!code) {
+//         return new Response("Missing pCloud code", { status: 400 });
+//       }
 
-      const { access_token } = await tokenRes.json();
+//       const tokenRes = await fetch("https://api.pcloud.com/oauth2_token", {
+//         method: "POST",
+//         headers: {
+//           "Content-Type": "application/x-www-form-urlencoded",
+//         },
+//         body: new URLSearchParams({
+//           client_id: env.PCLOUD_CLIENT_ID,
+//           client_secret: env.PCLOUD_CLIENT_SECRET,
+//           code,
+//         }),
+//       });
 
-      if (!access_token) {
-        return new Response("Auth failed", { status: 401 });
-      }
+//       const tokenData = await tokenRes.json();
 
-      // ✅ ONLY place we check guild membership
-      const inServer = await isInGuild(access_token);
+//       return new Response(JSON.stringify(tokenData, null, 2), {
+//         headers: {
+//           ...corsHeaders,
+//           "Content-Type": "application/json",
+//         },
+//       });
+//     }
 
-      if (!inServer) {
-        return new Response("Not in server", { status: 403 });
-      }
+//     if (url.pathname === "/callback") {
+//       const code = url.searchParams.get("code");
 
-      const redirectTo =
-        `${env.FRONTEND_ORIGIN}${env.APP_PATH}#token=${access_token}`;
+//       if (!code) {
+//         return new Response("Missing code", { status: 400 });
+//       }
 
-      return Response.redirect(redirectTo, 302);
-    }
+//       const tokenRes = await fetch("https://discord.com/api/oauth2/token", {
+//         method: "POST",
+//         headers: {
+//           "Content-Type": "application/x-www-form-urlencoded",
+//         },
+//         body: new URLSearchParams({
+//           client_id: env.CLIENT_ID,
+//           client_secret: env.CLIENT_SECRET,
+//           grant_type: "authorization_code",
+//           code,
+//           redirect_uri: env.REDIRECT_URI,
+//         }),
+//       });
 
-    // ------------------------
-    // /me
-    // ------------------------
-    if (url.pathname === "/me") {
-      const auth = req.headers.get("Authorization");
-      const token = auth?.replace("Bearer ", "");
+//       const { access_token } = await tokenRes.json();
 
-      const user = await getUser(token);
+//       if (!access_token) {
+//         return new Response("Auth failed", { status: 401 });
+//       }
 
-      if (!user) {
-        return new Response("Unauthorized", {
-          status: 401,
-          headers: corsHeaders,
-        });
-      }
+//       const inServer = await isInGuild(access_token);
 
-      return new Response(JSON.stringify(user), {
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-        },
-      });
-    }
+//       if (!inServer) {
+//         return new Response("Not in server", { status: 403 });
+//       }
 
-    // ------------------------
-    // SEND MESSAGE (simplified)
-    // ------------------------
-    if (url.pathname === "/send") {
-      const auth = req.headers.get("Authorization");
-      const token = auth?.replace("Bearer ", "");
+//       const redirectTo =
+//         `${env.FRONTEND_ORIGIN}${env.APP_PATH}#token=${access_token}`;
 
-      const user = await getUser(token);
+//       return Response.redirect(redirectTo, 302);
+//     }
 
-      if (!user) {
-        return new Response("Unauthorized", { status: 401 });
-      }
+//     if (url.pathname === "/me") {
+//       const auth = req.headers.get("Authorization");
+//       const token = auth?.replace("Bearer ", "");
 
-      const { message } = await req.json();
+//       const user = await getUser(token);
 
-      await fetch(
-        `https://discord.com/api/v10/channels/${env.DISCORD_CHANNEL_ID}/messages`,
-        {
-          method: "POST",
-          headers: {
-            "Authorization": `Bot ${env.DISCORD_BOT_TOKEN}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            content: `**${user.username}**: ${message}`,
-          }),
-        }
-      );
+//       if (!user) {
+//         return new Response("Unauthorized", {
+//           status: 401,
+//           headers: corsHeaders,
+//         });
+//       }
 
-      return new Response("sent", { headers: corsHeaders });
-    }
+//       return new Response(JSON.stringify(user), {
+//         headers: {
+//           ...corsHeaders,
+//           "Content-Type": "application/json",
+//         },
+//       });
+//     }
 
-    // ------------------------
-    // GET MESSAGES (simplified)
-    // ------------------------
-    if (url.pathname === "/messages") {
-      const auth = req.headers.get("Authorization");
-      const token = auth?.replace("Bearer ", "");
+//     if (url.pathname === "/send") {
+//       const auth = req.headers.get("Authorization");
+//       const token = auth?.replace("Bearer ", "");
 
-      const user = await getUser(token);
+//       const user = await getUser(token);
 
-      if (!user) {
-        return new Response("Unauthorized", {
-          status: 401,
-          headers: corsHeaders,
-        });
-      }
+//       if (!user) {
+//         return new Response("Unauthorized", {
+//           status: 401,
+//           headers: corsHeaders,
+//         });
+//       }
 
-      const res = await fetch(
-        `https://discord.com/api/v10/channels/${env.DISCORD_CHANNEL_ID}/messages?limit=20`,
-        {
-          headers: {
-            "Authorization": `Bot ${env.DISCORD_BOT_TOKEN}`,
-          },
-        }
-      );
+//       const formData = await req.formData();
+//       const message = formData.get("message") || "";
+//       const file = formData.get("file");
 
-      const data = await res.json();
+//       const discordForm = new FormData();
 
-      return new Response(JSON.stringify(data), {
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-        },
-      });
-    }
+//       discordForm.append(
+//         "payload_json",
+//         JSON.stringify({
+//           content: `**${user.username}**: ${message}`,
+//         })
+//       );
 
-    return new Response("Not found", {
-      status: 404,
-      headers: corsHeaders,
-    });
-  },
-};
+//       if (file && file.size > 0) {
+//         discordForm.append("files[0]", file, file.name);
+//       }
 
-*/
+//       await fetch(
+//         `https://discord.com/api/v10/channels/${env.DISCORD_CHANNEL_ID}/messages`,
+//         {
+//           method: "POST",
+//           headers: {
+//             Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
+//           },
+//           body: discordForm,
+//         }
+//       );
+
+//       return new Response("sent", { headers: corsHeaders });
+//     }
+
+//     if (url.pathname === "/messages") {
+//       const auth = req.headers.get("Authorization");
+//       const token = auth?.replace("Bearer ", "");
+
+//       const user = await getUser(token);
+
+//       if (!user) {
+//         return new Response("Unauthorized", {
+//           status: 401,
+//           headers: corsHeaders,
+//         });
+//       }
+
+//       const res = await fetch(
+//         `https://discord.com/api/v10/channels/${env.DISCORD_CHANNEL_ID}/messages?limit=20`,
+//         {
+//           headers: {
+//             Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
+//           },
+//         }
+//       );
+
+//       const data = await res.json();
+
+//       return new Response(JSON.stringify(data), {
+//         headers: {
+//           ...corsHeaders,
+//           "Content-Type": "application/json",
+//         },
+//       });
+//     }
+
+//     if (url.pathname === "/pcloud/list") {
+//       const auth = req.headers.get("Authorization");
+//       const token = auth?.replace("Bearer ", "");
+
+//       const user = await getUser(token);
+
+//       if (!user) {
+//         return new Response("Unauthorized", {
+//           status: 401,
+//           headers: corsHeaders,
+//         });
+//       }
+
+//       const folder = url.searchParams.get("folder") || "/";
+
+//       const res = await fetch(
+//         `https://api.pcloud.com/listfolder?path=${encodeURIComponent(
+//           folder
+//         )}&access_token=${env.PCLOUD_ACCESS_TOKEN}`
+//       );
+
+//       const data = await res.json();
+
+//       return new Response(JSON.stringify(data), {
+//         headers: {
+//           ...corsHeaders,
+//           "Content-Type": "application/json",
+//         },
+//       });
+//     }
+
+//     if (url.pathname === "/pcloud/file") {
+//       const auth = req.headers.get("Authorization");
+//       const token = auth?.replace("Bearer ", "");
+
+//       const user = await getUser(token);
+
+//       if (!user) {
+//         return new Response("Unauthorized", {
+//           status: 401,
+//           headers: corsHeaders,
+//         });
+//       }
+
+//       const path = url.searchParams.get("path");
+
+//       if (!path) {
+//         return new Response("Missing path", {
+//           status: 400,
+//           headers: corsHeaders,
+//         });
+//       }
+
+//       const linkRes = await fetch(
+//         `https://api.pcloud.com/getfilelink?path=${encodeURIComponent(
+//           path
+//         )}&access_token=${env.PCLOUD_ACCESS_TOKEN}`
+//       );
+
+//       const linkData = await linkRes.json();
+
+//       if (linkData.result !== 0 || !linkData.hosts?.length) {
+//         return new Response(JSON.stringify(linkData, null, 2), {
+//           status: 500,
+//           headers: {
+//             ...corsHeaders,
+//             "Content-Type": "application/json",
+//           },
+//         });
+//       }
+
+//       const fileUrl = `https://${linkData.hosts[0]}${linkData.path}`;
+
+//       const fileRes = await fetch(fileUrl, {
+//         headers: {
+//           Referer: "https://my.pcloud.com/",
+//         },
+//       });
+
+//       return new Response(fileRes.body, {
+//         status: fileRes.status,
+//         headers: {
+//           ...corsHeaders,
+//           "Content-Type":
+//             fileRes.headers.get("Content-Type") || "application/octet-stream",
+//           "Cache-Control": "private, max-age=300",
+//         },
+//       });
+//     }
+
+//     return new Response("Not found", {
+//       status: 404,
+//       headers: corsHeaders,
+//     });
+//   },
+// };
