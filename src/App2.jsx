@@ -131,10 +131,10 @@ export default function App() {
     try {
       const filePath = buildPath(pcloudPath, item.name);
 
-      console.log("Fetching pCloud preview:", filePath);
+      console.log("Fetching pCloud thumbnail:", filePath);
 
       const res = await fetch(
-        `${API}/pcloud/file?path=${encodeURIComponent(filePath)}`,
+        `${API}/pcloud/thumb?path=${encodeURIComponent(filePath)}&size=512x512`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -163,46 +163,6 @@ export default function App() {
       console.error("Preview failed:", err);
     }
   }
-
-  //   async function renderPcloudFile(item) {
-  //     const token = getToken();
-
-  //     if (!token) return;
-
-  //     if (!isImageFile(item.name)) {
-  //       window.open(item.filelink || "#", "_blank");
-  //       return;
-  //     }
-
-  //     try {
-  //       const filePath = item.path || buildPath(pcloudPath, item.name);
-
-  //       const res = await fetch(
-  //         `${API}/pcloud/file?path=${encodeURIComponent(filePath)}`,
-  //         {
-  //           headers: {
-  //             Authorization: `Bearer ${token}`,
-  //           },
-  //         },
-  //       );
-
-  //       if (!res.ok) {
-  //         throw new Error("pCloud file fetch failed");
-  //       }
-
-  //       const blob = await res.blob();
-  //       const url = URL.createObjectURL(blob);
-
-  //       if (previewUrl) {
-  //         URL.revokeObjectURL(previewUrl);
-  //       }
-
-  //       setPreviewUrl(url);
-  //       setPreviewName(item.name);
-  //     } catch (err) {
-  //       console.error(err);
-  //     }
-  //   }
 
   const login = () => {
     window.location.href = `${API}/login`;
@@ -468,8 +428,7 @@ export default function App() {
                 {pcloudFolders.length === 0 && <div>No folders</div>}
 
                 {pcloudFolders.map((folder) => {
-                  const folderPath =
-                    folder.path || buildPath(pcloudPath, folder.name);
+                  const folderPath = buildPath(pcloudPath, folder.name);
 
                   return (
                     <div
@@ -500,7 +459,7 @@ export default function App() {
                       borderRadius: 8,
                       padding: 10,
                     }}
-                    key={item.fileid || item.path || item.name}
+                    key={item.fileid || item.name}
                   >
                     <div>
                       {isImageFile(item.name) ? "🖼️" : "📄"} {item.name}
