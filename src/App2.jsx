@@ -15,7 +15,7 @@ export default function App() {
   // chat | gallery | files
   const [tab, setTab] = useState("chat");
 
-  // pCloud explorer
+  // pCloud file explorer
   const [pcloudPath, setPcloudPath] = useState("/");
   const [pcloudContents, setPcloudContents] = useState([]);
   const [pcloudSearch, setPcloudSearch] = useState("");
@@ -43,17 +43,21 @@ export default function App() {
     load();
   }, []);
 
+  // ------------------------
+  // Load pCloud when Files tab opens
+  // ------------------------
   useEffect(() => {
-    if (tab === "files" && user) {
-      loadPcloudFolder(pcloudPath);
+    if (tab === "files" && user && pcloudContents.length === 0) {
+      loadPcloudFolder("/");
     }
-  }, [tab, user, pcloudPath]);
+  }, [tab, user, pcloudContents.length]);
 
   // ------------------------
   // Load Discord
   // ------------------------
   async function load() {
     const token = getToken();
+
     if (!token) return;
 
     try {
@@ -81,6 +85,8 @@ export default function App() {
       }
 
       const msgData = await msgRes.json();
+
+      // Discord already returns newest -> oldest
       setMessages(msgData);
     } catch (err) {
       console.error(err);
@@ -96,6 +102,7 @@ export default function App() {
   // ------------------------
   async function loadPcloudFolder(folderPath) {
     const token = getToken();
+
     if (!token) return;
 
     setPcloudLoading(true);
@@ -133,9 +140,12 @@ export default function App() {
   // ------------------------
   async function previewPcloudFile(item) {
     const token = getToken();
+
     if (!token) return;
 
     const filePath = item.path || buildPath(pcloudPath, item.name);
+
+    console.log("Previewing:", filePath);
 
     if (!isImageFile(item.name)) {
       console.warn("Preview currently supports images only:", item.name);
@@ -152,16 +162,20 @@ export default function App() {
         },
       );
 
-      console.log("preview status:", res.status);
-      console.log("preview content-type:", res.headers.get("Content-Type"));
+      console.log("status:", res.status);
+      console.log("content-type:", res.headers.get("Content-Type"));
 
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text);
+        console.log(await res.text());
+        return;
       }
 
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+
+      console.log("blob type:", blob.type);
+      console.log("blob size:", blob.size);
+
+      const objectUrl = URL.createObjectURL(blob);
 
       if (preview?.url) {
         URL.revokeObjectURL(preview.url);
@@ -170,7 +184,7 @@ export default function App() {
       setPreview({
         name: item.name,
         path: filePath,
-        url,
+        url: objectUrl,
       });
     } catch (err) {
       console.error("Preview failed:", err);
@@ -220,7 +234,7 @@ export default function App() {
   };
 
   // ------------------------
-  // Discord Gallery Images
+  // Discord gallery images
   // ------------------------
   const images = useMemo(() => {
     return messages.flatMap((msg) =>
@@ -238,7 +252,7 @@ export default function App() {
   }, [messages]);
 
   // ------------------------
-  // pCloud filter
+  // pCloud filtering
   // ------------------------
   const filteredPcloudContents = useMemo(() => {
     const q = pcloudSearch.trim().toLowerCase();
@@ -502,6 +516,7 @@ export default function App() {
 
                       <div
                         style={{
+                          wordBreak: "break-all",
                           fontSize: 12,
                           opacity: 0.7,
                           marginTop: 4,
@@ -571,7 +586,9 @@ export default function App() {
 }
 
 function getBreadcrumbs(path) {
-  if (path === "/") return [{ label: "Home", path: "/" }];
+  if (path === "/") {
+    return [{ label: "Home", path: "/" }];
+  }
 
   const parts = path.split("/").filter(Boolean);
 
