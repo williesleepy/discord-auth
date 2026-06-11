@@ -2,6 +2,9 @@ import { useEffect, useState, useMemo } from "react";
 
 const API = "https://discord-auth.williesleepy.workers.dev";
 
+// ------------------------
+// App
+// ------------------------
 export default function App() {
   const [user, setUser] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -9,21 +12,24 @@ export default function App() {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // chat | gallery | files
   const [tab, setTab] = useState("chat");
 
+  // pCloud explorer
   const [pcloudPath, setPcloudPath] = useState("/");
   const [pcloudContents, setPcloudContents] = useState([]);
   const [pcloudSearch, setPcloudSearch] = useState("");
   const [pcloudLoading, setPcloudLoading] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState(null);
-  const [previewName, setPreviewName] = useState("");
+  const [preview, setPreview] = useState(null);
 
+  // ------------------------
+  // Initial Load
+  // ------------------------
   useEffect(() => {
     const tokenFromUrl = getTokenFromUrl();
 
     if (tokenFromUrl) {
       localStorage.setItem("token", tokenFromUrl);
-
       window.history.replaceState({}, document.title, window.location.pathname);
     }
 
@@ -38,14 +44,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (tab === "pcloud" && user) {
+    if (tab === "files" && user) {
       loadPcloudFolder(pcloudPath);
     }
-  }, [tab, pcloudPath, user]);
+  }, [tab, user, pcloudPath]);
 
+  // ------------------------
+  // Load Discord
+  // ------------------------
   async function load() {
     const token = getToken();
-
     if (!token) return;
 
     try {
@@ -83,18 +91,19 @@ export default function App() {
     }
   }
 
-  async function loadPcloudFolder(path) {
+  // ------------------------
+  // Load pCloud folder
+  // ------------------------
+  async function loadPcloudFolder(folderPath) {
     const token = getToken();
-
     if (!token) return;
 
     setPcloudLoading(true);
-    setPreviewUrl(null);
-    setPreviewName("");
+    setPreview(null);
 
     try {
       const res = await fetch(
-        `${API}/pcloud/list?folder=${encodeURIComponent(path)}`,
+        `${API}/pcloud/list?folder=${encodeURIComponent(folderPath)}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -107,9 +116,10 @@ export default function App() {
       }
 
       const data = await res.json();
-      const contents = data.metadata?.contents || [];
 
-      setPcloudContents(contents);
+      setPcloudPath(folderPath);
+      setPcloudContents(data.metadata?.contents || []);
+      setPcloudSearch("");
     } catch (err) {
       console.error(err);
       setPcloudContents([]);
@@ -118,23 +128,23 @@ export default function App() {
     }
   }
 
-  async function renderPcloudFile(item) {
+  // ------------------------
+  // Preview pCloud file
+  // ------------------------
+  async function previewPcloudFile(item) {
     const token = getToken();
-
     if (!token) return;
 
+    const filePath = item.path || buildPath(pcloudPath, item.name);
+
     if (!isImageFile(item.name)) {
-      console.warn("Preview only supports images right now:", item.name);
+      console.warn("Preview currently supports images only:", item.name);
       return;
     }
 
     try {
-      const filePath = buildPath(pcloudPath, item.name);
-
-      console.log("Fetching pCloud thumbnail:", filePath);
-
       const res = await fetch(
-        `${API}/pcloud/thumb?path=${encodeURIComponent(filePath)}&size=512x512`,
+        `${API}/pcloud/file?path=${encodeURIComponent(filePath)}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -142,8 +152,8 @@ export default function App() {
         },
       );
 
-      console.log("status:", res.status);
-      console.log("content-type:", res.headers.get("Content-Type"));
+      console.log("preview status:", res.status);
+      console.log("preview content-type:", res.headers.get("Content-Type"));
 
       if (!res.ok) {
         const text = await res.text();
@@ -153,21 +163,30 @@ export default function App() {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
 
-      if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
+      if (preview?.url) {
+        URL.revokeObjectURL(preview.url);
       }
 
-      setPreviewUrl(url);
-      setPreviewName(item.name);
+      setPreview({
+        name: item.name,
+        path: filePath,
+        url,
+      });
     } catch (err) {
       console.error("Preview failed:", err);
     }
   }
 
+  // ------------------------
+  // Login
+  // ------------------------
   const login = () => {
     window.location.href = `${API}/login`;
   };
 
+  // ------------------------
+  // Send Discord message
+  // ------------------------
   const sendMessage = async () => {
     const token = getToken();
 
@@ -200,6 +219,9 @@ export default function App() {
     }
   };
 
+  // ------------------------
+  // Discord Gallery Images
+  // ------------------------
   const images = useMemo(() => {
     return messages.flatMap((msg) =>
       (msg.attachments || [])
@@ -215,6 +237,9 @@ export default function App() {
     );
   }, [messages]);
 
+  // ------------------------
+  // pCloud filter
+  // ------------------------
   const filteredPcloudContents = useMemo(() => {
     const q = pcloudSearch.trim().toLowerCase();
 
@@ -228,6 +253,9 @@ export default function App() {
   const pcloudFolders = filteredPcloudContents.filter((item) => item.isfolder);
   const pcloudFiles = filteredPcloudContents.filter((item) => !item.isfolder);
 
+  // ------------------------
+  // UI
+  // ------------------------
   if (loading) {
     return <div>Loading...</div>;
   }
@@ -240,6 +268,7 @@ export default function App() {
     <div style={{ padding: 20 }}>
       <h2>Welcome {user.username}</h2>
 
+      {/* Tabs */}
       <div
         style={{
           marginBottom: 20,
@@ -250,9 +279,10 @@ export default function App() {
       >
         <button onClick={() => setTab("chat")}>Chat</button>
         <button onClick={() => setTab("gallery")}>Gallery</button>
-        <button onClick={() => setTab("pcloud")}>pCloud</button>
+        <button onClick={() => setTab("files")}>Files</button>
       </div>
 
+      {/* CHAT TAB */}
       {tab === "chat" && (
         <>
           <div style={{ marginBottom: 30 }}>
@@ -331,6 +361,7 @@ export default function App() {
         </>
       )}
 
+      {/* GALLERY TAB */}
       {tab === "gallery" && (
         <div>
           <h3>Image Gallery</h3>
@@ -385,19 +416,16 @@ export default function App() {
         </div>
       )}
 
-      {tab === "pcloud" && (
+      {/* FILES TAB */}
+      {tab === "files" && (
         <div>
           <h3>pCloud File Explorer</h3>
 
+          {/* Breadcrumbs */}
           <div style={{ marginBottom: 12 }}>
             {getBreadcrumbs(pcloudPath).map((crumb, index, arr) => (
               <span key={crumb.path}>
-                <button
-                  onClick={() => {
-                    setPcloudPath(crumb.path);
-                    setPcloudSearch("");
-                  }}
-                >
+                <button onClick={() => loadPcloudFolder(crumb.path)}>
                   {crumb.label}
                 </button>
                 {index < arr.length - 1 && <span> / </span>}
@@ -405,9 +433,15 @@ export default function App() {
             ))}
           </div>
 
+          {/* Search */}
           <input
+            style={{
+              display: "block",
+              marginBottom: 20,
+              width: "100%",
+              maxWidth: 400,
+            }}
             onChange={(e) => setPcloudSearch(e.target.value)}
-            style={{ marginBottom: 20, display: "block" }}
             placeholder="Search current folder"
             value={pcloudSearch}
           />
@@ -422,25 +456,22 @@ export default function App() {
                 gap: 20,
               }}
             >
+              {/* Browser */}
               <div>
                 <h4>Folders</h4>
 
                 {pcloudFolders.length === 0 && <div>No folders</div>}
 
                 {pcloudFolders.map((folder) => {
-                  const folderPath = buildPath(pcloudPath, folder.name);
+                  const folderPath =
+                    folder.path || buildPath(pcloudPath, folder.name);
 
                   return (
                     <div
                       key={folder.folderid || folderPath}
                       style={{ marginBottom: 8 }}
                     >
-                      <button
-                        onClick={() => {
-                          setPcloudPath(folderPath);
-                          setPcloudSearch("");
-                        }}
-                      >
+                      <button onClick={() => loadPcloudFolder(folderPath)}>
                         📁 {folder.name}
                       </button>
                     </div>
@@ -451,45 +482,72 @@ export default function App() {
 
                 {pcloudFiles.length === 0 && <div>No files</div>}
 
-                {pcloudFiles.map((item) => (
-                  <div
-                    style={{
-                      border: "1px solid #ccc",
-                      marginBottom: 8,
-                      borderRadius: 8,
-                      padding: 10,
-                    }}
-                    key={item.fileid || item.name}
-                  >
-                    <div>
-                      {isImageFile(item.name) ? "🖼️" : "📄"} {item.name}
-                    </div>
+                {pcloudFiles.map((item) => {
+                  const filePath =
+                    item.path || buildPath(pcloudPath, item.name);
 
-                    {item.size && (
-                      <div style={{ fontSize: 12, opacity: 0.7 }}>
-                        {Math.round(item.size / 1024)} KB
-                      </div>
-                    )}
-
-                    <button
-                      onClick={() => renderPcloudFile(item)}
-                      style={{ marginTop: 8 }}
+                  return (
+                    <div
+                      style={{
+                        border: "1px solid #ccc",
+                        marginBottom: 8,
+                        borderRadius: 8,
+                        padding: 10,
+                      }}
+                      key={item.fileid || filePath}
                     >
-                      {isImageFile(item.name) ? "Preview" : "Open"}
-                    </button>
-                  </div>
-                ))}
+                      <div>
+                        {isImageFile(item.name) ? "🖼️" : "📄"} {item.name}
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 12,
+                          opacity: 0.7,
+                          marginTop: 4,
+                        }}
+                      >
+                        {filePath}
+                      </div>
+
+                      {item.size && (
+                        <div style={{ fontSize: 12, opacity: 0.7 }}>
+                          {Math.round(item.size / 1024)} KB
+                        </div>
+                      )}
+
+                      <button
+                        onClick={() => previewPcloudFile(item)}
+                        style={{ marginTop: 8 }}
+                      >
+                        {isImageFile(item.name) ? "Preview" : "Open"}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
 
+              {/* Preview */}
               <div>
                 <h4>Preview</h4>
 
-                {!previewUrl && <div>Select an image file to preview.</div>}
+                {!preview && <div>Select an image file to preview.</div>}
 
-                {previewUrl && (
+                {preview && (
                   <div>
                     <div style={{ fontWeight: "bold", marginBottom: 8 }}>
-                      {previewName}
+                      {preview.name}
+                    </div>
+
+                    <div
+                      style={{
+                        wordBreak: "break-all",
+                        marginBottom: 8,
+                        fontSize: 12,
+                        opacity: 0.7,
+                      }}
+                    >
+                      {preview.path}
                     </div>
 
                     <img
@@ -498,8 +556,8 @@ export default function App() {
                         maxWidth: "100%",
                         borderRadius: 8,
                       }}
-                      alt={previewName}
-                      src={previewUrl}
+                      alt={preview.name}
+                      src={preview.url}
                     />
                   </div>
                 )}
@@ -513,9 +571,7 @@ export default function App() {
 }
 
 function getBreadcrumbs(path) {
-  if (path === "/") {
-    return [{ label: "Home", path: "/" }];
-  }
+  if (path === "/") return [{ label: "Home", path: "/" }];
 
   const parts = path.split("/").filter(Boolean);
 
@@ -528,6 +584,9 @@ function getBreadcrumbs(path) {
   ];
 }
 
+// ------------------------
+// Helpers
+// ------------------------
 function getToken() {
   const token = localStorage.getItem("token");
 

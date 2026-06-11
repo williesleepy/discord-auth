@@ -16,9 +16,7 @@ export default {
       if (!token) return null;
 
       const res = await fetch("https://discord.com/api/users/@me", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (!res.ok) return null;
@@ -27,9 +25,7 @@ export default {
 
     async function isInGuild(token) {
       const res = await fetch("https://discord.com/api/users/@me/guilds", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (!res.ok) return false;
@@ -276,41 +272,79 @@ export default {
         });
       }
 
-      const linkRes = await fetch(
-        `https://api.pcloud.com/getfilelink?path=${encodeURIComponent(
-          path,
-        )}&access_token=${env.PCLOUD_ACCESS_TOKEN}`,
-      );
+      const attempts = [];
+      const maxAttempts = 3;
 
-      const linkData = await linkRes.json();
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const linkRes = await fetch(
+          `https://api.pcloud.com/getfilelink?path=${encodeURIComponent(
+            path,
+          )}&access_token=${env.PCLOUD_ACCESS_TOKEN}`,
+        );
 
-      if (linkData.result !== 0 || !linkData.hosts?.length) {
-        return new Response(JSON.stringify(linkData, null, 2), {
+        const linkData = await linkRes.json();
+
+        if (linkData.result !== 0 || !linkData.hosts?.length) {
+          attempts.push({
+            stage: "getfilelink",
+            linkData,
+            attempt,
+          });
+
+          continue;
+        }
+
+        for (const host of linkData.hosts) {
+          const fileUrl = `https://${host}${linkData.path}`;
+
+          const fileRes = await fetch(fileUrl, {
+            headers: {
+              Referer: "https://my.pcloud.com/",
+            },
+          });
+
+          if (fileRes.ok) {
+            return new Response(fileRes.body, {
+              headers: {
+                ...corsHeaders,
+                "Content-Type":
+                  fileRes.headers.get("Content-Type") ||
+                  "application/octet-stream",
+                "Cache-Control": "private, max-age=300",
+              },
+              status: fileRes.status,
+            });
+          }
+
+          attempts.push({
+            contentType: fileRes.headers.get("Content-Type"),
+            body: await fileRes.text(),
+            status: fileRes.status,
+            stage: "download",
+            attempt,
+            host,
+          });
+        }
+      }
+
+      return new Response(
+        JSON.stringify(
+          {
+            error: "All pCloud file download attempts failed",
+            requestedPath: path,
+            attempts,
+          },
+          null,
+          2,
+        ),
+        {
           headers: {
             ...corsHeaders,
             "Content-Type": "application/json",
           },
-          status: 500,
-        });
-      }
-
-      const fileUrl = `https://${linkData.hosts[0]}${linkData.path}`;
-
-      const fileRes = await fetch(fileUrl, {
-        headers: {
-          Referer: "https://my.pcloud.com/",
+          status: 502,
         },
-      });
-
-      return new Response(fileRes.body, {
-        headers: {
-          ...corsHeaders,
-          "Content-Type":
-            fileRes.headers.get("Content-Type") || "application/octet-stream",
-          "Cache-Control": "private, max-age=300",
-        },
-        status: fileRes.status,
-      });
+      );
     }
 
     return new Response("Not found", {
