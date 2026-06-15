@@ -250,6 +250,49 @@ export default {
       });
     }
 
+    if (url.pathname === "/r2/file") {
+      const auth = req.headers.get("Authorization");
+      const token = auth?.replace("Bearer ", "");
+
+      const user = await getUser(token);
+
+      if (!user) {
+        return new Response("Unauthorized", {
+          headers: corsHeaders,
+          status: 401,
+        });
+      }
+
+      const path = url.searchParams.get("path");
+
+      if (!path) {
+        return new Response("Missing path", {
+          headers: corsHeaders,
+          status: 400,
+        });
+      }
+
+      const key = path.replace(/^\/+/, "");
+
+      const object = await env.IMAGES_BUCKET.get(key);
+
+      if (!object) {
+        return new Response("Not found", {
+          headers: corsHeaders,
+          status: 404,
+        });
+      }
+
+      return new Response(object.body, {
+        headers: {
+          ...corsHeaders,
+          "Content-Type":
+            object.httpMetadata?.contentType || "application/octet-stream",
+          "Cache-Control": "private, max-age=300",
+        },
+      });
+    }
+
     if (url.pathname === "/pcloud/file") {
       const auth = req.headers.get("Authorization");
       const token = auth?.replace("Bearer ", "");
