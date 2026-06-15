@@ -137,7 +137,7 @@ export default function App() {
 
     try {
       const res = await fetch(
-        `${API}/r2/list?prefix=${encodeURIComponent(prefix)}&limit=100`,
+        `${API}/r2/list?prefix=${encodeURIComponent(prefix)}&limit=25`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
