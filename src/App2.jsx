@@ -610,7 +610,6 @@ function R2ImageCard({ file }) {
 }
 
 function DiscordMessage({ msg }) {
-  console.log(msg.reactions);
   return (
     <div
       style={{
@@ -663,6 +662,35 @@ function DiscordMessage({ msg }) {
           </div>
         );
       })}
+
+      {msg.reactions?.length > 0 && (
+        <div
+          style={{
+            flexWrap: "wrap",
+            display: "flex",
+            marginTop: 10,
+            gap: 8,
+          }}
+        >
+          {msg.reactions.map((reaction) => {
+            const key = reaction.emoji.id || reaction.emoji.name;
+
+            return (
+              <span
+                style={{
+                  border: "1px solid #ccc",
+                  padding: "4px 8px",
+                  borderRadius: 999,
+                  fontSize: 13,
+                }}
+                key={key}
+              >
+                {formatReactionEmoji(reaction.emoji)} {reaction.count}
+              </span>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -719,6 +747,16 @@ function getTokenFromUrl() {
   const hash = window.location.hash;
   const params = new URLSearchParams(hash.replace("#", ""));
   return params.get("token");
+}
+
+function formatReactionEmoji(emoji) {
+  if (!emoji) return "";
+
+  if (emoji.id) {
+    return `:${emoji.name}:`;
+  }
+
+  return emoji.name;
 }
 
 function isImageFile(name = "") {
