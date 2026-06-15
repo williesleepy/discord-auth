@@ -610,6 +610,7 @@ function R2ImageCard({ file }) {
 }
 
 function DiscordMessage({ msg }) {
+  console.log(msg.reactions);
   return (
     <div
       style={{
