@@ -248,6 +248,7 @@ export default function App() {
       (msg.attachments || [])
         .filter((att) => att.content_type?.startsWith("image/"))
         .map((att) => ({
+          reactions: msg.reactions || [],
           author: msg.author?.username,
           timestamp: msg.timestamp,
           filename: att.filename,
@@ -383,6 +384,34 @@ export default function App() {
 
                 {img.content && (
                   <div style={{ marginTop: 8 }}>{img.content}</div>
+                )}
+                {img.reactions?.length > 0 && (
+                  <div
+                    style={{
+                      flexWrap: "wrap",
+                      display: "flex",
+                      marginTop: 10,
+                      gap: 8,
+                    }}
+                  >
+                    {img.reactions.map((reaction) => {
+                      const key = reaction.emoji.id || reaction.emoji.name;
+
+                      return (
+                        <span
+                          style={{
+                            border: "1px solid #ccc",
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            fontSize: 13,
+                          }}
+                          key={key}
+                        >
+                          {formatReactionEmoji(reaction.emoji)} {reaction.count}
+                        </span>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             ))}
