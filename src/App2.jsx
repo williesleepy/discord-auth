@@ -19,6 +19,9 @@ export default function App() {
   const [r2Files, setR2Files] = useState([]);
   const [r2Search, setR2Search] = useState("");
   const [r2Loading, setR2Loading] = useState(false);
+  const [r2Cursor, setR2Cursor] = useState(null);
+  const [r2HasMore, setR2HasMore] = useState(false);
+  const [r2LoadingMore, setR2LoadingMore] = useState(false);
 
   useEffect(() => {
     const tokenFromUrl = getTokenFromUrl();
@@ -154,13 +157,53 @@ export default function App() {
       setR2Prefix(data.prefix || "");
       setR2Folders(data.folders || []);
       setR2Files(data.files || []);
+      setR2Cursor(data.cursor || null);
+      setR2HasMore(Boolean(data.truncated));
       setR2Search("");
     } catch (err) {
       console.error(err);
       setR2Folders([]);
       setR2Files([]);
+      setR2Cursor(null);
+      setR2HasMore(false);
     } finally {
       setR2Loading(false);
+    }
+  }
+
+  async function loadMoreR2Files() {
+    const token = getToken();
+
+    if (!token || !r2Cursor) return;
+
+    setR2LoadingMore(true);
+
+    try {
+      const res = await fetch(
+        `${API}/r2/list?prefix=${encodeURIComponent(
+          r2Prefix,
+        )}&limit=25&cursor=${encodeURIComponent(r2Cursor)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!res.ok) {
+        throw new Error("R2 load more failed");
+      }
+
+      const data = await res.json();
+
+      setR2Folders((prev) => [...prev, ...(data.folders || [])]);
+      setR2Files((prev) => [...prev, ...(data.files || [])]);
+      setR2Cursor(data.cursor || null);
+      setR2HasMore(Boolean(data.truncated));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setR2LoadingMore(false);
     }
   }
 
@@ -441,6 +484,16 @@ export default function App() {
                   </div>
                 ))}
               </div>
+
+              {r2HasMore && (
+                <button
+                  onClick={loadMoreR2Files}
+                  style={{ marginTop: 20 }}
+                  disabled={r2LoadingMore}
+                >
+                  {r2LoadingMore ? "Loading..." : "Load More Files"}
+                </button>
+              )}
             </>
           )}
         </div>
