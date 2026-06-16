@@ -11,8 +11,8 @@ export default function App() {
 
   const [messagesLoadingMore, setMessagesLoadingMore] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const [heartLoadingId, setHeartLoadingId] = useState(null);
 
-  // chat | gallery
   const [tab, setTab] = useState("chat");
 
   useEffect(() => {
@@ -72,6 +72,62 @@ export default function App() {
       setMessages([]);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function refreshCurrentMessages() {
+    const token = getToken();
+
+    if (!token) return;
+
+    try {
+      const res = await fetch(
+        `${API}/messages?limit=${messages.length || 50}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!res.ok) {
+        throw new Error("Message refresh failed");
+      }
+
+      const freshMessages = await res.json();
+      setMessages(freshMessages);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  async function toggleHeart(messageId, hasHearted) {
+    const token = getToken();
+
+    if (!token) return;
+
+    setHeartLoadingId(messageId);
+
+    try {
+      const res = await fetch(`${API}/reaction/heart`, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        method: hasHearted ? "DELETE" : "POST",
+        body: JSON.stringify({ messageId }),
+      });
+
+      if (!res.ok && res.status !== 204) {
+        console.error("Heart toggle failed:", res.status, await res.text());
+        return;
+      }
+
+      await refreshCurrentMessages();
+    } catch (err) {
+      console.error("Heart toggle failed:", err);
+    } finally {
+      setHeartLoadingId(null);
     }
   }
 
@@ -188,6 +244,7 @@ export default function App() {
           timestamp: msg.timestamp,
           filename: att.filename,
           content: msg.content,
+          messageId: msg.id,
           url: att.url,
           id: att.id,
         })),
@@ -251,7 +308,12 @@ export default function App() {
             </div>
 
             {messages.map((msg) => (
-              <DiscordMessage key={msg.id} msg={msg} />
+              <DiscordMessage
+                heartLoadingId={heartLoadingId}
+                onToggleHeart={toggleHeart}
+                key={msg.id}
+                msg={msg}
+              />
             ))}
           </div>
         </>
@@ -281,54 +343,72 @@ export default function App() {
               gap: 16,
             }}
           >
-            {images.map((img) => (
-              <div
-                style={{
-                  border: "1px solid #ccc",
-                  borderRadius: 8,
-                  padding: 10,
-                }}
-                key={img.id}
-              >
-                <img
-                  style={{
-                    display: "block",
-                    borderRadius: 8,
-                    width: "100%",
-                  }}
-                  alt={img.filename}
-                  src={img.url}
-                />
+            {images.map((img) => {
+              const heart = getHeartReactionFromReactions(img.reactions);
+              const hasHearted = Boolean(heart?.me);
+              const heartCount = heart?.count || 0;
 
-                <div style={{ fontWeight: "bold", marginTop: 10 }}>
-                  {img.author}
-                </div>
-
+              return (
                 <div
                   style={{
-                    fontSize: 12,
-                    opacity: 0.7,
-                    marginTop: 4,
+                    border: "1px solid #ccc",
+                    borderRadius: 8,
+                    padding: 10,
                   }}
+                  key={img.id}
                 >
-                  {new Date(img.timestamp).toLocaleString()}
-                </div>
+                  <img
+                    style={{
+                      display: "block",
+                      borderRadius: 8,
+                      width: "100%",
+                    }}
+                    alt={img.filename}
+                    src={img.url}
+                  />
 
-                {img.content && (
-                  <div style={{ marginTop: 8 }}>{img.content}</div>
-                )}
-
-                {img.discord_url && (
-                  <div style={{ marginTop: 8 }}>
-                    <a href={img.discord_url} rel="noreferrer" target="_blank">
-                      Open in Discord
-                    </a>
+                  <div style={{ fontWeight: "bold", marginTop: 10 }}>
+                    {img.author}
                   </div>
-                )}
 
-                <ReactionList reactions={img.reactions} />
-              </div>
-            ))}
+                  <div
+                    style={{
+                      fontSize: 12,
+                      opacity: 0.7,
+                      marginTop: 4,
+                    }}
+                  >
+                    {new Date(img.timestamp).toLocaleString()}
+                  </div>
+
+                  {img.content && (
+                    <div style={{ marginTop: 8 }}>{img.content}</div>
+                  )}
+
+                  {img.discord_url && (
+                    <div style={{ marginTop: 8 }}>
+                      <a
+                        href={img.discord_url}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        Open in Discord
+                      </a>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => toggleHeart(img.messageId, hasHearted)}
+                    disabled={heartLoadingId === img.messageId}
+                    style={{ marginTop: 10 }}
+                  >
+                    {hasHearted ? "💔 Remove Heart" : "❤️ Heart"} {heartCount}
+                  </button>
+
+                  <ReactionList reactions={img.reactions} />
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -336,7 +416,11 @@ export default function App() {
   );
 }
 
-function DiscordMessage({ msg }) {
+function DiscordMessage({ heartLoadingId, onToggleHeart, msg }) {
+  const heart = getHeartReaction(msg);
+  const hasHearted = Boolean(heart?.me);
+  const heartCount = heart?.count || 0;
+
   return (
     <div
       style={{
@@ -397,6 +481,14 @@ function DiscordMessage({ msg }) {
           </a>
         </div>
       )}
+
+      <button
+        onClick={() => onToggleHeart(msg.id, hasHearted)}
+        disabled={heartLoadingId === msg.id}
+        style={{ marginTop: 10 }}
+      >
+        {hasHearted ? "💔 Remove Heart" : "❤️ Heart"} {heartCount}
+      </button>
 
       <ReactionList reactions={msg.reactions} />
     </div>
@@ -460,4 +552,12 @@ function formatReactionEmoji(emoji) {
   }
 
   return emoji.name;
+}
+
+function getHeartReactionFromReactions(reactions) {
+  return reactions.find((reaction) => reaction.emoji?.name === "❤️");
+}
+
+function getHeartReaction(message) {
+  return getHeartReactionFromReactions(message.reactions || []);
 }
