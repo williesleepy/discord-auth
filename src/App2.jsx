@@ -12,16 +12,8 @@ export default function App() {
   const [messagesLoadingMore, setMessagesLoadingMore] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
 
+  // chat | gallery
   const [tab, setTab] = useState("chat");
-
-  const [r2Prefix, setR2Prefix] = useState("");
-  const [r2Folders, setR2Folders] = useState([]);
-  const [r2Files, setR2Files] = useState([]);
-  const [r2Search, setR2Search] = useState("");
-  const [r2Loading, setR2Loading] = useState(false);
-  const [r2Cursor, setR2Cursor] = useState(null);
-  const [r2HasMore, setR2HasMore] = useState(false);
-  const [r2LoadingMore, setR2LoadingMore] = useState(false);
 
   useEffect(() => {
     const tokenFromUrl = getTokenFromUrl();
@@ -40,17 +32,6 @@ export default function App() {
 
     load();
   }, []);
-
-  useEffect(() => {
-    if (
-      tab === "files" &&
-      user &&
-      r2Folders.length === 0 &&
-      r2Files.length === 0
-    ) {
-      loadR2Folder("");
-    }
-  }, [tab, user, r2Folders.length, r2Files.length]);
 
   async function load() {
     const token = getToken();
@@ -131,79 +112,32 @@ export default function App() {
     }
   }
 
-  async function loadR2Folder(prefix = "") {
+  async function loadAllMessages() {
     const token = getToken();
 
     if (!token) return;
 
-    setR2Loading(true);
+    setMessagesLoadingMore(true);
 
     try {
-      const res = await fetch(
-        `${API}/r2/list?prefix=${encodeURIComponent(prefix)}&limit=25`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+      const res = await fetch(`${API}/messages/all`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
         },
-      );
+      });
 
       if (!res.ok) {
-        throw new Error("R2 list failed");
+        throw new Error("Failed to load full message history");
       }
 
-      const data = await res.json();
+      const allMessages = await res.json();
 
-      setR2Prefix(data.prefix || "");
-      setR2Folders(data.folders || []);
-      setR2Files(data.files || []);
-      setR2Cursor(data.cursor || null);
-      setR2HasMore(Boolean(data.truncated));
-      setR2Search("");
-    } catch (err) {
-      console.error(err);
-      setR2Folders([]);
-      setR2Files([]);
-      setR2Cursor(null);
-      setR2HasMore(false);
-    } finally {
-      setR2Loading(false);
-    }
-  }
-
-  async function loadMoreR2Files() {
-    const token = getToken();
-
-    if (!token || !r2Cursor) return;
-
-    setR2LoadingMore(true);
-
-    try {
-      const res = await fetch(
-        `${API}/r2/list?prefix=${encodeURIComponent(
-          r2Prefix,
-        )}&limit=25&cursor=${encodeURIComponent(r2Cursor)}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
-
-      if (!res.ok) {
-        throw new Error("R2 load more failed");
-      }
-
-      const data = await res.json();
-
-      setR2Folders((prev) => [...prev, ...(data.folders || [])]);
-      setR2Files((prev) => [...prev, ...(data.files || [])]);
-      setR2Cursor(data.cursor || null);
-      setR2HasMore(Boolean(data.truncated));
+      setMessages(allMessages);
+      setHasMoreMessages(false);
     } catch (err) {
       console.error(err);
     } finally {
-      setR2LoadingMore(false);
+      setMessagesLoadingMore(false);
     }
   }
 
@@ -249,6 +183,7 @@ export default function App() {
         .filter((att) => att.content_type?.startsWith("image/"))
         .map((att) => ({
           reactions: msg.reactions || [],
+          discord_url: msg.discord_url,
           author: msg.author?.username,
           timestamp: msg.timestamp,
           filename: att.filename,
@@ -258,25 +193,6 @@ export default function App() {
         })),
     );
   }, [messages]);
-
-  const filteredR2Folders = useMemo(() => {
-    const q = r2Search.trim().toLowerCase();
-
-    if (!q) return r2Folders;
-
-    return r2Folders.filter((folder) => folder.name?.toLowerCase().includes(q));
-  }, [r2Folders, r2Search]);
-
-  const filteredR2Files = useMemo(() => {
-    const q = r2Search.trim().toLowerCase();
-
-    if (!q) return r2Files;
-
-    return r2Files.filter((file) => file.name?.toLowerCase().includes(q));
-  }, [r2Files, r2Search]);
-
-  const imageFiles = filteredR2Files.filter((file) => isImageFile(file.name));
-  const otherFiles = filteredR2Files.filter((file) => !isImageFile(file.name));
 
   if (loading) {
     return <div>Loading...</div>;
@@ -300,7 +216,6 @@ export default function App() {
       >
         <button onClick={() => setTab("chat")}>Chat</button>
         <button onClick={() => setTab("gallery")}>Gallery</button>
-        <button onClick={() => setTab("files")}>Files</button>
       </div>
 
       {tab === "chat" && (
@@ -320,19 +235,24 @@ export default function App() {
           <div>
             <h3>Messages</h3>
 
+            <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
+              {hasMoreMessages && (
+                <button
+                  disabled={messagesLoadingMore}
+                  onClick={loadMoreMessages}
+                >
+                  {messagesLoadingMore ? "Loading..." : "Load More"}
+                </button>
+              )}
+
+              <button disabled={messagesLoadingMore} onClick={loadAllMessages}>
+                {messagesLoadingMore ? "Loading..." : "Load Full History"}
+              </button>
+            </div>
+
             {messages.map((msg) => (
               <DiscordMessage key={msg.id} msg={msg} />
             ))}
-
-            {hasMoreMessages && (
-              <button
-                disabled={messagesLoadingMore}
-                onClick={loadMoreMessages}
-                style={{ marginTop: 10 }}
-              >
-                {messagesLoadingMore ? "Loading..." : "Load More"}
-              </button>
-            )}
           </div>
         </>
       )}
@@ -340,6 +260,18 @@ export default function App() {
       {tab === "gallery" && (
         <div>
           <h3>Image Gallery</h3>
+
+          <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
+            {hasMoreMessages && (
+              <button disabled={messagesLoadingMore} onClick={loadMoreMessages}>
+                {messagesLoadingMore ? "Loading..." : "Load More"}
+              </button>
+            )}
+
+            <button disabled={messagesLoadingMore} onClick={loadAllMessages}>
+              {messagesLoadingMore ? "Loading..." : "Load Full History"}
+            </button>
+          </div>
 
           <div
             style={{
@@ -385,253 +317,19 @@ export default function App() {
                 {img.content && (
                   <div style={{ marginTop: 8 }}>{img.content}</div>
                 )}
-                {img.reactions?.length > 0 && (
-                  <div
-                    style={{
-                      flexWrap: "wrap",
-                      display: "flex",
-                      marginTop: 10,
-                      gap: 8,
-                    }}
-                  >
-                    {img.reactions.map((reaction) => {
-                      const key = reaction.emoji.id || reaction.emoji.name;
 
-                      return (
-                        <span
-                          style={{
-                            border: "1px solid #ccc",
-                            padding: "4px 8px",
-                            borderRadius: 999,
-                            fontSize: 13,
-                          }}
-                          key={key}
-                        >
-                          {formatReactionEmoji(reaction.emoji)} {reaction.count}
-                        </span>
-                      );
-                    })}
+                {img.discord_url && (
+                  <div style={{ marginTop: 8 }}>
+                    <a href={img.discord_url} rel="noreferrer" target="_blank">
+                      Open in Discord
+                    </a>
                   </div>
                 )}
+
+                <ReactionList reactions={img.reactions} />
               </div>
             ))}
           </div>
-
-          {hasMoreMessages && (
-            <button
-              disabled={messagesLoadingMore}
-              onClick={loadMoreMessages}
-              style={{ marginTop: 20 }}
-            >
-              {messagesLoadingMore ? "Loading..." : "Load More"}
-            </button>
-          )}
-        </div>
-      )}
-
-      {tab === "files" && (
-        <div>
-          <h3>R2 File Explorer</h3>
-
-          <Breadcrumbs onNavigate={loadR2Folder} prefix={r2Prefix} />
-
-          <input
-            style={{
-              display: "block",
-              marginBottom: 20,
-              width: "100%",
-              maxWidth: 400,
-            }}
-            onChange={(e) => setR2Search(e.target.value)}
-            placeholder="Search current folder"
-            value={r2Search}
-          />
-
-          {r2Loading && <div>Loading R2 folder...</div>}
-
-          {!r2Loading && (
-            <>
-              <h4>Folders</h4>
-
-              {filteredR2Folders.length === 0 && <div>No folders</div>}
-
-              <div style={{ marginBottom: 24 }}>
-                {filteredR2Folders.map((folder) => (
-                  <button
-                    onClick={() => loadR2Folder(folder.prefix)}
-                    style={{ marginBottom: 8, marginRight: 8 }}
-                    key={folder.prefix}
-                  >
-                    📁 {folder.name}
-                  </button>
-                ))}
-              </div>
-
-              <h4>Images</h4>
-
-              {imageFiles.length === 0 && <div>No images</div>}
-
-              <div
-                style={{
-                  gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-                  marginBottom: 30,
-                  display: "grid",
-                  gap: 16,
-                }}
-              >
-                {imageFiles.map((file) => (
-                  <R2ImageCard key={file.key} file={file} />
-                ))}
-              </div>
-
-              <h4>Other Files</h4>
-
-              {otherFiles.length === 0 && <div>No other files</div>}
-
-              <div>
-                {otherFiles.map((file) => (
-                  <div
-                    style={{
-                      border: "1px solid #ccc",
-                      borderRadius: 8,
-                      marginBottom: 8,
-                      padding: 10,
-                    }}
-                    key={file.key}
-                  >
-                    <div>📄 {file.name}</div>
-
-                    <div style={{ fontSize: 12, opacity: 0.7 }}>
-                      {file.path}
-                    </div>
-
-                    {file.size && (
-                      <div style={{ fontSize: 12, opacity: 0.7 }}>
-                        {Math.round(file.size / 1024)} KB
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {r2HasMore && (
-                <button
-                  onClick={loadMoreR2Files}
-                  style={{ marginTop: 20 }}
-                  disabled={r2LoadingMore}
-                >
-                  {r2LoadingMore ? "Loading..." : "Load More Files"}
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function R2ImageCard({ file }) {
-  const [objectUrl, setObjectUrl] = useState(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    let url = null;
-
-    async function loadImage() {
-      const token = getToken();
-
-      if (!token) return;
-
-      try {
-        const res = await fetch(
-          `${API}/r2/file?path=${encodeURIComponent(file.path)}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          },
-        );
-
-        if (!res.ok) {
-          setFailed(true);
-          return;
-        }
-
-        const blob = await res.blob();
-        url = URL.createObjectURL(blob);
-
-        if (!cancelled) {
-          setObjectUrl(url);
-        }
-      } catch (err) {
-        console.error("R2 image failed:", err);
-        setFailed(true);
-      }
-    }
-
-    loadImage();
-
-    return () => {
-      cancelled = true;
-
-      if (url) {
-        URL.revokeObjectURL(url);
-      }
-    };
-  }, [file.path]);
-
-  return (
-    <div
-      style={{
-        border: "1px solid #ccc",
-        borderRadius: 8,
-        padding: 10,
-      }}
-    >
-      <div
-        style={{
-          justifyContent: "center",
-          aspectRatio: "1 / 1",
-          alignItems: "center",
-          background: "#eee",
-          overflow: "hidden",
-          borderRadius: 8,
-          display: "flex",
-          width: "100%",
-        }}
-      >
-        {objectUrl && (
-          <img
-            style={{
-              objectFit: "contain",
-              display: "block",
-              height: "100%",
-              width: "100%",
-            }}
-            src={objectUrl}
-            alt={file.name}
-          />
-        )}
-
-        {!objectUrl && !failed && <span>Loading...</span>}
-        {failed && <span>Failed</span>}
-      </div>
-
-      <div
-        style={{
-          wordBreak: "break-word",
-          marginTop: 8,
-          fontSize: 13,
-        }}
-      >
-        {file.name}
-      </div>
-
-      {file.size && (
-        <div style={{ fontSize: 12, opacity: 0.7 }}>
-          {Math.round(file.size / 1024)} KB
         </div>
       )}
     </div>
@@ -692,72 +390,48 @@ function DiscordMessage({ msg }) {
         );
       })}
 
-      {msg.reactions?.length > 0 && (
-        <div
-          style={{
-            flexWrap: "wrap",
-            display: "flex",
-            marginTop: 10,
-            gap: 8,
-          }}
-        >
-          {msg.reactions.map((reaction) => {
-            const key = reaction.emoji.id || reaction.emoji.name;
-
-            return (
-              <span
-                style={{
-                  border: "1px solid #ccc",
-                  padding: "4px 8px",
-                  borderRadius: 999,
-                  fontSize: 13,
-                }}
-                key={key}
-              >
-                {formatReactionEmoji(reaction.emoji)} {reaction.count}
-              </span>
-            );
-          })}
+      {msg.discord_url && (
+        <div style={{ marginTop: 10 }}>
+          <a href={msg.discord_url} rel="noreferrer" target="_blank">
+            Open in Discord
+          </a>
         </div>
       )}
+
+      <ReactionList reactions={msg.reactions} />
     </div>
   );
 }
 
-function Breadcrumbs({ onNavigate, prefix }) {
-  const clean = prefix.replace(/\/$/, "");
-
-  if (!clean) {
-    return (
-      <div style={{ marginBottom: 12 }}>
-        <button onClick={() => onNavigate("")}>Home</button>
-      </div>
-    );
-  }
-
-  const parts = clean.split("/");
-
-  const crumbs = [
-    {
-      label: "Home",
-      prefix: "",
-    },
-    ...parts.map((part, index) => ({
-      prefix: parts.slice(0, index + 1).join("/") + "/",
-      label: part,
-    })),
-  ];
+function ReactionList({ reactions }) {
+  if (!reactions?.length) return null;
 
   return (
-    <div style={{ marginBottom: 12 }}>
-      {crumbs.map((crumb, index) => (
-        <span key={crumb.prefix}>
-          <button onClick={() => onNavigate(crumb.prefix)}>
-            {crumb.label}
-          </button>
-          {index < crumbs.length - 1 && <span> / </span>}
-        </span>
-      ))}
+    <div
+      style={{
+        flexWrap: "wrap",
+        display: "flex",
+        marginTop: 10,
+        gap: 8,
+      }}
+    >
+      {reactions.map((reaction) => {
+        const key = reaction.emoji.id || reaction.emoji.name;
+
+        return (
+          <span
+            style={{
+              border: "1px solid #ccc",
+              padding: "4px 8px",
+              borderRadius: 999,
+              fontSize: 13,
+            }}
+            key={key}
+          >
+            {formatReactionEmoji(reaction.emoji)} {reaction.count}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -786,8 +460,4 @@ function formatReactionEmoji(emoji) {
   }
 
   return emoji.name;
-}
-
-function isImageFile(name = "") {
-  return /\.(png|jpe?g|gif|webp|svg)$/i.test(name);
 }
