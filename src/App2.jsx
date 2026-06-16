@@ -256,8 +256,14 @@ export default function App() {
       const heart = getHeartForMessage(heartState, msg.id, user?.id);
 
       switch (filter) {
-        case "my-requests":
-          return msg.author?.id === user?.id;
+        case "my-requests": {
+          const usernamePrefix = `**${user?.username}**:`;
+
+          return (
+            msg.author?.id === user?.id ||
+            msg.content?.startsWith(usernamePrefix)
+          );
+        }
 
         case "unhearted":
           return heart.count === 0;
@@ -277,7 +283,7 @@ export default function App() {
           return true;
       }
     });
-  }, [messages, heartState, filter, user?.id]);
+  }, [messages, heartState, filter, user?.id, user?.username]);
 
   const images = useMemo(() => {
     return filteredMessages.flatMap((msg) =>
@@ -505,7 +511,6 @@ export default function App() {
     </div>
   );
 }
-
 
 function DiscordMessage({ heartLoadingId, onToggleHeart, heart, msg }) {
   return (
