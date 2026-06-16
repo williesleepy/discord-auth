@@ -15,6 +15,7 @@ export default function App() {
   const [heartLoadingId, setHeartLoadingId] = useState(null);
 
   const [tab, setTab] = useState("chat");
+  const [filter, setFilter] = useState("all");
 
   useEffect(() => {
     const tokenFromUrl = getTokenFromUrl();
@@ -250,8 +251,36 @@ export default function App() {
     return buildHeartState(heartEvents);
   }, [heartEvents]);
 
+  const filteredMessages = useMemo(() => {
+    return messages.filter((msg) => {
+      const heart = getHeartForMessage(heartState, msg.id, user?.id);
+
+      switch (filter) {
+        case "my-requests":
+          return msg.author?.id === user?.id;
+
+        case "unhearted":
+          return heart.count === 0;
+
+        case "my-hearts":
+          return heart.hasHearted;
+
+        case "hearted":
+          return heart.count > 0;
+
+        case "images":
+          return (msg.attachments || []).some((att) =>
+            att.content_type?.startsWith("image/"),
+          );
+
+        default:
+          return true;
+      }
+    });
+  }, [messages, heartState, filter, user?.id]);
+
   const images = useMemo(() => {
-    return messages.flatMap((msg) =>
+    return filteredMessages.flatMap((msg) =>
       (msg.attachments || [])
         .filter((att) => att.content_type?.startsWith("image/"))
         .map((att) => ({
@@ -266,7 +295,7 @@ export default function App() {
           id: att.id,
         })),
     );
-  }, [messages]);
+  }, [filteredMessages]);
 
   const login = () => {
     window.location.href = `${API}/login`;
@@ -328,6 +357,8 @@ export default function App() {
         <button onClick={() => setTab("gallery")}>Gallery</button>
       </div>
 
+      <FilterBar setFilter={setFilter} filter={filter} />
+
       {tab === "chat" && (
         <>
           <div style={{ marginBottom: 30 }}>
@@ -360,7 +391,7 @@ export default function App() {
               </button>
             </div>
 
-            {messages.map((msg) => {
+            {filteredMessages.map((msg) => {
               const heart = getHeartForMessage(heartState, msg.id, user.id);
 
               return (
@@ -475,6 +506,7 @@ export default function App() {
   );
 }
 
+
 function DiscordMessage({ heartLoadingId, onToggleHeart, heart, msg }) {
   return (
     <div
@@ -545,6 +577,45 @@ function DiscordMessage({ heartLoadingId, onToggleHeart, heart, msg }) {
       />
 
       <ReactionList reactions={msg.reactions} />
+    </div>
+  );
+}
+
+function FilterBar({ setFilter, filter }) {
+  const filters = [
+    { value: "all", label: "All" },
+    { value: "hearted", label: "Hearted" },
+    { value: "unhearted", label: "Unhearted" },
+    { value: "my-hearts", label: "My Hearts" },
+    { value: "my-requests", label: "My Requests" },
+    { label: "Images Only", value: "images" },
+  ];
+
+  return (
+    <div
+      style={{
+        flexWrap: "wrap",
+        marginBottom: 20,
+        display: "flex",
+        gap: 8,
+      }}
+    >
+      {filters.map((item) => {
+        const active = filter === item.value;
+
+        return (
+          <button
+            style={{
+              border: active ? "2px solid #333" : "1px solid #ccc",
+              fontWeight: active ? "bold" : "normal",
+            }}
+            onClick={() => setFilter(item.value)}
+            key={item.value}
+          >
+            {item.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
