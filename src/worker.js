@@ -34,6 +34,13 @@ export default {
       return guilds.some((g) => g.id === env.GUILD_ID);
     }
 
+    function addDiscordUrls(messages, env) {
+      return messages.map((msg) => ({
+        ...msg,
+        discord_url: `https://discord.com/channels/${env.GUILD_ID}/${env.DISCORD_CHANNEL_ID}/${msg.id}`,
+      }));
+    }
+
     if (url.pathname === "/login") {
       const redirect =
         "https://discord.com/api/oauth2/authorize" +
@@ -43,45 +50,6 @@ export default {
         `&scope=identify guilds`;
 
       return Response.redirect(redirect, 302);
-    }
-
-    if (url.pathname === "/pcloud/login") {
-      const redirect =
-        "https://my.pcloud.com/oauth2/authorize" +
-        `?client_id=${env.PCLOUD_CLIENT_ID}` +
-        `&response_type=code` +
-        `&redirect_uri=${encodeURIComponent(env.PCLOUD_REDIRECT_URI)}`;
-
-      return Response.redirect(redirect, 302);
-    }
-
-    if (url.pathname === "/pcloud/callback") {
-      const code = url.searchParams.get("code");
-
-      if (!code) {
-        return new Response("Missing pCloud code", { status: 400 });
-      }
-
-      const tokenRes = await fetch("https://api.pcloud.com/oauth2_token", {
-        body: new URLSearchParams({
-          client_secret: env.PCLOUD_CLIENT_SECRET,
-          client_id: env.PCLOUD_CLIENT_ID,
-          code,
-        }),
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        method: "POST",
-      });
-
-      const tokenData = await tokenRes.json();
-
-      return new Response(JSON.stringify(tokenData, null, 2), {
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-        },
-      });
     }
 
     if (url.pathname === "/callback") {
@@ -200,8 +168,19 @@ export default {
         });
       }
 
+      const limit = Math.min(Number(url.searchParams.get("limit") || 50), 100);
+      const before = url.searchParams.get("before");
+
+      const params = new URLSearchParams({
+        limit: String(limit),
+      });
+
+      if (before) {
+        params.set("before", before);
+      }
+
       const res = await fetch(
-        `https://discord.com/api/v10/channels/${env.DISCORD_CHANNEL_ID}/messages?limit=20`,
+        `https://discord.com/api/v10/channels/${env.DISCORD_CHANNEL_ID}/messages?${params.toString()}`,
         {
           headers: {
             Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
@@ -210,8 +189,9 @@ export default {
       );
 
       const data = await res.json();
+      const enriched = addDiscordUrls(data, env);
 
-      return new Response(JSON.stringify(data), {
+      return new Response(JSON.stringify(enriched), {
         headers: {
           ...corsHeaders,
           "Content-Type": "application/json",
@@ -219,7 +199,7 @@ export default {
       });
     }
 
-    if (url.pathname === "/pcloud/list") {
+    if (url.pathname === "/messages/all") {
       const auth = req.headers.get("Authorization");
       const token = auth?.replace("Bearer ", "");
 
@@ -232,162 +212,54 @@ export default {
         });
       }
 
-      const folder = url.searchParams.get("folder") || "/";
+      const allMessages = [];
+      let before = null;
+      const limit = 100;
 
-      const res = await fetch(
-        `https://api.pcloud.com/listfolder?path=${encodeURIComponent(
-          folder,
-        )}&access_token=${env.PCLOUD_ACCESS_TOKEN}`,
-      );
-
-      const data = await res.json();
-
-      return new Response(JSON.stringify(data), {
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-        },
-      });
-    }
-
-    if (url.pathname === "/r2/file") {
-      const auth = req.headers.get("Authorization");
-      const token = auth?.replace("Bearer ", "");
-
-      const user = await getUser(token);
-
-      if (!user) {
-        return new Response("Unauthorized", {
-          headers: corsHeaders,
-          status: 401,
+      while (true) {
+        const params = new URLSearchParams({
+          limit: String(limit),
         });
-      }
 
-      const path = url.searchParams.get("path");
+        if (before) {
+          params.set("before", before);
+        }
 
-      if (!path) {
-        return new Response("Missing path", {
-          headers: corsHeaders,
-          status: 400,
-        });
-      }
-
-      const key = path.replace(/^\/+/, "");
-
-      const object = await env.IMAGES_BUCKET.get(key);
-
-      if (!object) {
-        return new Response("Not found", {
-          headers: corsHeaders,
-          status: 404,
-        });
-      }
-
-      return new Response(object.body, {
-        headers: {
-          ...corsHeaders,
-          "Content-Type":
-            object.httpMetadata?.contentType || "application/octet-stream",
-          "Cache-Control": "private, max-age=300",
-        },
-      });
-    }
-
-    if (url.pathname === "/pcloud/file") {
-      const auth = req.headers.get("Authorization");
-      const token = auth?.replace("Bearer ", "");
-
-      const user = await getUser(token);
-
-      if (!user) {
-        return new Response("Unauthorized", {
-          headers: corsHeaders,
-          status: 401,
-        });
-      }
-
-      const path = url.searchParams.get("path");
-
-      if (!path) {
-        return new Response("Missing path", {
-          headers: corsHeaders,
-          status: 400,
-        });
-      }
-
-      const attempts = [];
-      const maxAttempts = 3;
-
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        const linkRes = await fetch(
-          `https://api.pcloud.com/getfilelink?path=${encodeURIComponent(
-            path,
-          )}&access_token=${env.PCLOUD_ACCESS_TOKEN}`,
+        const res = await fetch(
+          `https://discord.com/api/v10/channels/${env.DISCORD_CHANNEL_ID}/messages?${params.toString()}`,
+          {
+            headers: {
+              Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
+            },
+          },
         );
 
-        const linkData = await linkRes.json();
-
-        if (linkData.result !== 0 || !linkData.hosts?.length) {
-          attempts.push({
-            stage: "getfilelink",
-            linkData,
-            attempt,
-          });
-
-          continue;
-        }
-
-        for (const host of linkData.hosts) {
-          const fileUrl = `https://${host}${linkData.path}`;
-
-          const fileRes = await fetch(fileUrl, {
-            headers: {
-              Referer: "https://my.pcloud.com/",
-            },
-          });
-
-          if (fileRes.ok) {
-            return new Response(fileRes.body, {
-              headers: {
-                ...corsHeaders,
-                "Content-Type":
-                  fileRes.headers.get("Content-Type") ||
-                  "application/octet-stream",
-                "Cache-Control": "private, max-age=300",
-              },
-              status: fileRes.status,
-            });
-          }
-
-          attempts.push({
-            contentType: fileRes.headers.get("Content-Type"),
-            body: await fileRes.text(),
-            status: fileRes.status,
-            stage: "download",
-            attempt,
-            host,
+        if (!res.ok) {
+          return new Response(await res.text(), {
+            headers: corsHeaders,
+            status: res.status,
           });
         }
+
+        const batch = await res.json();
+
+        if (!batch.length) break;
+
+        allMessages.push(...batch);
+
+        if (batch.length < limit) break;
+
+        before = batch[batch.length - 1].id;
       }
 
-      return new Response(
-        JSON.stringify(
-          {
-            error: "All pCloud file download attempts failed",
-            requestedPath: path,
-            attempts,
-          },
-          null,
-          2,
-        ),
-        {
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-          },
-          status: 502,
+      const enriched = addDiscordUrls(allMessages, env);
+
+      return new Response(JSON.stringify(enriched), {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
         },
-      );
+      });
     }
 
     return new Response("Not found", {

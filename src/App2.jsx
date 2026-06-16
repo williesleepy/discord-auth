@@ -5,14 +5,15 @@ const API = "https://discord-auth.williesleepy.workers.dev";
 export default function App() {
   const [user, setUser] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [heartEvents, setHeartEvents] = useState([]);
   const [input, setInput] = useState("");
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const [messagesLoadingMore, setMessagesLoadingMore] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const [heartLoadingId, setHeartLoadingId] = useState(null);
 
-  // chat | gallery
   const [tab, setTab] = useState("chat");
 
   useEffect(() => {
@@ -28,6 +29,51 @@ export default function App() {
     if (!token) {
       setLoading(false);
       return;
+    }
+
+    async function load() {
+      const token = getToken();
+
+      if (!token) return;
+
+      try {
+        const userRes = await fetch(`${API}/me`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!userRes.ok) {
+          throw new Error("Auth failed");
+        }
+
+        const userData = await userRes.json();
+        setUser(userData);
+
+        const msgRes = await fetch(`${API}/messages?limit=50`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!msgRes.ok) {
+          throw new Error("Message fetch failed");
+        }
+
+        const msgData = await msgRes.json();
+
+        setMessages(msgData);
+        setHasMoreMessages(msgData.length === 50);
+
+        await loadHeartEvents();
+      } catch (err) {
+        console.error(err);
+        setUser(null);
+        setMessages([]);
+        setHeartEvents([]);
+      } finally {
+        setLoading(false);
+      }
     }
 
     load();
@@ -66,13 +112,35 @@ export default function App() {
 
       setMessages(msgData);
       setHasMoreMessages(msgData.length === 50);
+
+      await loadHeartEvents();
     } catch (err) {
       console.error(err);
       setUser(null);
       setMessages([]);
+      setHeartEvents([]);
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadHeartEvents() {
+    const token = getToken();
+
+    if (!token) return;
+
+    const res = await fetch(`${API}/heart-events/all`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error("Failed to load heart events");
+    }
+
+    const events = await res.json();
+    setHeartEvents(events);
   }
 
   async function loadMoreMessages() {
@@ -134,12 +202,71 @@ export default function App() {
 
       setMessages(allMessages);
       setHasMoreMessages(false);
+
+      await loadHeartEvents();
     } catch (err) {
       console.error(err);
     } finally {
       setMessagesLoadingMore(false);
     }
   }
+
+  async function toggleHeart(targetMessageId, hasHearted) {
+    const token = getToken();
+
+    if (!token) return;
+
+    setHeartLoadingId(targetMessageId);
+
+    try {
+      const action = hasHearted ? "unheart" : "heart";
+
+      const res = await fetch(`${API}/heart-event`, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          targetMessageId,
+          action,
+        }),
+        method: "POST",
+      });
+
+      if (!res.ok) {
+        console.error("Heart event failed:", res.status, await res.text());
+        return;
+      }
+
+      await loadHeartEvents();
+    } catch (err) {
+      console.error("Heart event failed:", err);
+    } finally {
+      setHeartLoadingId(null);
+    }
+  }
+
+  const heartState = useMemo(() => {
+    return buildHeartState(heartEvents);
+  }, [heartEvents]);
+
+  const images = useMemo(() => {
+    return messages.flatMap((msg) =>
+      (msg.attachments || [])
+        .filter((att) => att.content_type?.startsWith("image/"))
+        .map((att) => ({
+          nativeReactions: msg.reactions || [],
+          discord_url: msg.discord_url,
+          author: msg.author?.username,
+          timestamp: msg.timestamp,
+          filename: att.filename,
+          content: msg.content,
+          messageId: msg.id,
+          url: att.url,
+          id: att.id,
+        })),
+    );
+  }, [messages]);
 
   const login = () => {
     window.location.href = `${API}/login`;
@@ -176,23 +303,6 @@ export default function App() {
       console.error("Send failed:", err);
     }
   };
-
-  const images = useMemo(() => {
-    return messages.flatMap((msg) =>
-      (msg.attachments || [])
-        .filter((att) => att.content_type?.startsWith("image/"))
-        .map((att) => ({
-          reactions: msg.reactions || [],
-          discord_url: msg.discord_url,
-          author: msg.author?.username,
-          timestamp: msg.timestamp,
-          filename: att.filename,
-          content: msg.content,
-          url: att.url,
-          id: att.id,
-        })),
-    );
-  }, [messages]);
 
   if (loading) {
     return <div>Loading...</div>;
@@ -250,9 +360,19 @@ export default function App() {
               </button>
             </div>
 
-            {messages.map((msg) => (
-              <DiscordMessage key={msg.id} msg={msg} />
-            ))}
+            {messages.map((msg) => {
+              const heart = getHeartForMessage(heartState, msg.id, user.id);
+
+              return (
+                <DiscordMessage
+                  heartLoadingId={heartLoadingId}
+                  onToggleHeart={toggleHeart}
+                  heart={heart}
+                  key={msg.id}
+                  msg={msg}
+                />
+              );
+            })}
           </div>
         </>
       )}
@@ -281,54 +401,73 @@ export default function App() {
               gap: 16,
             }}
           >
-            {images.map((img) => (
-              <div
-                style={{
-                  border: "1px solid #ccc",
-                  borderRadius: 8,
-                  padding: 10,
-                }}
-                key={img.id}
-              >
-                <img
-                  style={{
-                    display: "block",
-                    borderRadius: 8,
-                    width: "100%",
-                  }}
-                  alt={img.filename}
-                  src={img.url}
-                />
+            {images.map((img) => {
+              const heart = getHeartForMessage(
+                heartState,
+                img.messageId,
+                user.id,
+              );
 
-                <div style={{ fontWeight: "bold", marginTop: 10 }}>
-                  {img.author}
-                </div>
-
+              return (
                 <div
                   style={{
-                    fontSize: 12,
-                    opacity: 0.7,
-                    marginTop: 4,
+                    border: "1px solid #ccc",
+                    borderRadius: 8,
+                    padding: 10,
                   }}
+                  key={img.id}
                 >
-                  {new Date(img.timestamp).toLocaleString()}
-                </div>
+                  <img
+                    style={{
+                      display: "block",
+                      borderRadius: 8,
+                      width: "100%",
+                    }}
+                    alt={img.filename}
+                    src={img.url}
+                  />
 
-                {img.content && (
-                  <div style={{ marginTop: 8 }}>{img.content}</div>
-                )}
-
-                {img.discord_url && (
-                  <div style={{ marginTop: 8 }}>
-                    <a href={img.discord_url} rel="noreferrer" target="_blank">
-                      Open in Discord
-                    </a>
+                  <div style={{ fontWeight: "bold", marginTop: 10 }}>
+                    {img.author}
                   </div>
-                )}
 
-                <ReactionList reactions={img.reactions} />
-              </div>
-            ))}
+                  <div
+                    style={{
+                      fontSize: 12,
+                      opacity: 0.7,
+                      marginTop: 4,
+                    }}
+                  >
+                    {new Date(img.timestamp).toLocaleString()}
+                  </div>
+
+                  {img.content && (
+                    <div style={{ marginTop: 8 }}>{img.content}</div>
+                  )}
+
+                  {img.discord_url && (
+                    <div style={{ marginTop: 8 }}>
+                      <a
+                        href={img.discord_url}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        Open in Discord
+                      </a>
+                    </div>
+                  )}
+
+                  <HeartButton
+                    loading={heartLoadingId === img.messageId}
+                    targetMessageId={img.messageId}
+                    onToggleHeart={toggleHeart}
+                    heart={heart}
+                  />
+
+                  <ReactionList reactions={img.nativeReactions} />
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -336,7 +475,7 @@ export default function App() {
   );
 }
 
-function DiscordMessage({ msg }) {
+function DiscordMessage({ heartLoadingId, onToggleHeart, heart, msg }) {
   return (
     <div
       style={{
@@ -398,6 +537,13 @@ function DiscordMessage({ msg }) {
         </div>
       )}
 
+      <HeartButton
+        loading={heartLoadingId === msg.id}
+        onToggleHeart={onToggleHeart}
+        targetMessageId={msg.id}
+        heart={heart}
+      />
+
       <ReactionList reactions={msg.reactions} />
     </div>
   );
@@ -434,6 +580,56 @@ function ReactionList({ reactions }) {
       })}
     </div>
   );
+}
+
+function buildHeartState(events) {
+  const state = {};
+
+  const chronologicalEvents = [...events].sort(
+    (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
+  );
+
+  for (const event of chronologicalEvents) {
+    if (!state[event.targetMessageId]) {
+      state[event.targetMessageId] = {};
+    }
+
+    if (event.action === "heart") {
+      state[event.targetMessageId][event.userId] = {
+        timestamp: event.timestamp,
+        username: event.username,
+        userId: event.userId,
+      };
+    }
+
+    if (event.action === "unheart") {
+      delete state[event.targetMessageId][event.userId];
+    }
+  }
+
+  return state;
+}
+
+function HeartButton({ targetMessageId, onToggleHeart, loading, heart }) {
+  return (
+    <button
+      onClick={() => onToggleHeart(targetMessageId, heart.hasHearted)}
+      style={{ marginTop: 10 }}
+      disabled={loading}
+    >
+      {heart.hasHearted ? "💔 Remove Heart" : "❤️ Heart"} {heart.count}
+    </button>
+  );
+}
+
+function getHeartForMessage(heartState, messageId, userId) {
+  const users = heartState[messageId] || {};
+  const count = Object.keys(users).length;
+
+  return {
+    hasHearted: Boolean(users[userId]),
+    count,
+  };
 }
 
 function getToken() {

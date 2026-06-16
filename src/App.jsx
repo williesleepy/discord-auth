@@ -2,9 +2,6 @@ import { useEffect, useState, useMemo } from "react";
 
 const API = "https://discord-auth.williesleepy.workers.dev";
 
-// ------------------------
-// App
-// ------------------------
 export default function App() {
   const [user, setUser] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -12,18 +9,17 @@ export default function App() {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const [messagesLoadingMore, setMessagesLoadingMore] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
+
   // chat | gallery
   const [tab, setTab] = useState("chat");
 
-  // ------------------------
-  // Initial Load
-  // ------------------------
   useEffect(() => {
     const tokenFromUrl = getTokenFromUrl();
 
     if (tokenFromUrl) {
       localStorage.setItem("token", tokenFromUrl);
-
       window.history.replaceState({}, document.title, window.location.pathname);
     }
 
@@ -37,16 +33,12 @@ export default function App() {
     load();
   }, []);
 
-  // ------------------------
-  // Load
-  // ------------------------
   async function load() {
     const token = getToken();
 
     if (!token) return;
 
     try {
-      // user
       const userRes = await fetch(`${API}/me`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -60,8 +52,7 @@ export default function App() {
       const userData = await userRes.json();
       setUser(userData);
 
-      // messages
-      const msgRes = await fetch(`${API}/messages`, {
+      const msgRes = await fetch(`${API}/messages?limit=50`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -73,8 +64,8 @@ export default function App() {
 
       const msgData = await msgRes.json();
 
-      // Discord already returns newest -> oldest
       setMessages(msgData);
+      setHasMoreMessages(msgData.length === 50);
     } catch (err) {
       console.error(err);
       setUser(null);
@@ -84,21 +75,80 @@ export default function App() {
     }
   }
 
-  // ------------------------
-  // Login
-  // ------------------------
-  const login = () => {
-    window.location.href = `${API}/login`;
-  };
+  async function loadMoreMessages() {
+    const token = getToken();
 
-  // ------------------------
-  // Send
-  // ------------------------
-  const sendMessage = async () => {
+    if (!token || messages.length === 0) return;
+
+    const oldestMessage = messages[messages.length - 1];
+
+    setMessagesLoadingMore(true);
+
+    try {
+      const res = await fetch(
+        `${API}/messages?limit=50&before=${oldestMessage.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!res.ok) {
+        throw new Error("Failed to load older messages");
+      }
+
+      const olderMessages = await res.json();
+
+      setMessages((prev) => [...prev, ...olderMessages]);
+
+      if (olderMessages.length < 50) {
+        setHasMoreMessages(false);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setMessagesLoadingMore(false);
+    }
+  }
+
+  async function loadAllMessages() {
     const token = getToken();
 
     if (!token) return;
 
+    setMessagesLoadingMore(true);
+
+    try {
+      const res = await fetch(`${API}/messages/all`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to load full message history");
+      }
+
+      const allMessages = await res.json();
+
+      setMessages(allMessages);
+      setHasMoreMessages(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setMessagesLoadingMore(false);
+    }
+  }
+
+  const login = () => {
+    window.location.href = `${API}/login`;
+  };
+
+  const sendMessage = async () => {
+    const token = getToken();
+
+    if (!token) return;
     if (!input.trim() && !file) return;
 
     try {
@@ -127,14 +177,13 @@ export default function App() {
     }
   };
 
-  // ------------------------
-  // Gallery Images
-  // ------------------------
   const images = useMemo(() => {
     return messages.flatMap((msg) =>
       (msg.attachments || [])
         .filter((att) => att.content_type?.startsWith("image/"))
         .map((att) => ({
+          reactions: msg.reactions || [],
+          discord_url: msg.discord_url,
           author: msg.author?.username,
           timestamp: msg.timestamp,
           filename: att.filename,
@@ -145,9 +194,6 @@ export default function App() {
     );
   }, [messages]);
 
-  // ------------------------
-  // UI
-  // ------------------------
   if (loading) {
     return <div>Loading...</div>;
   }
@@ -160,7 +206,6 @@ export default function App() {
     <div style={{ padding: 20 }}>
       <h2>Welcome {user.username}</h2>
 
-      {/* Tabs */}
       <div
         style={{
           marginBottom: 20,
@@ -170,14 +215,11 @@ export default function App() {
         }}
       >
         <button onClick={() => setTab("chat")}>Chat</button>
-
         <button onClick={() => setTab("gallery")}>Gallery</button>
       </div>
 
-      {/* CHAT TAB */}
       {tab === "chat" && (
         <>
-          {/* Send UI */}
           <div style={{ marginBottom: 30 }}>
             <input
               onChange={(e) => setInput(e.target.value)}
@@ -190,86 +232,46 @@ export default function App() {
             <button onClick={sendMessage}>Send</button>
           </div>
 
-          {/* Messages */}
           <div>
             <h3>Messages</h3>
 
+            <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
+              {hasMoreMessages && (
+                <button
+                  disabled={messagesLoadingMore}
+                  onClick={loadMoreMessages}
+                >
+                  {messagesLoadingMore ? "Loading..." : "Load More"}
+                </button>
+              )}
+
+              <button disabled={messagesLoadingMore} onClick={loadAllMessages}>
+                {messagesLoadingMore ? "Loading..." : "Load Full History"}
+              </button>
+            </div>
+
             {messages.map((msg) => (
-              <div
-                style={{
-                  border: "1px solid #ccc",
-                  marginBottom: 12,
-                  borderRadius: 8,
-                  padding: 12,
-                }}
-                key={msg.id}
-              >
-                {/* Username */}
-                <div
-                  style={{
-                    fontWeight: "bold",
-                    marginBottom: 6,
-                  }}
-                >
-                  {msg.author?.username}
-                </div>
-
-                {/* Timestamp */}
-                <div
-                  style={{
-                    marginBottom: 10,
-                    fontSize: 12,
-                    opacity: 0.7,
-                  }}
-                >
-                  {new Date(msg.timestamp).toLocaleString()}
-                </div>
-
-                {/* Text */}
-                {msg.content && (
-                  <div style={{ marginBottom: 10 }}>{msg.content}</div>
-                )}
-
-                {/* Attachments */}
-                {msg.attachments?.map((att) => {
-                  const isImage = att.content_type?.startsWith("image/");
-
-                  // image
-                  if (isImage) {
-                    return (
-                      <img
-                        style={{
-                          display: "block",
-                          borderRadius: 8,
-                          maxWidth: 300,
-                          marginTop: 10,
-                        }}
-                        src={att.url}
-                        key={att.id}
-                        alt=""
-                      />
-                    );
-                  }
-
-                  // non-image
-                  return (
-                    <div style={{ marginTop: 10 }} key={att.id}>
-                      <a rel="noreferrer" target="_blank" href={att.url}>
-                        {att.filename}
-                      </a>
-                    </div>
-                  );
-                })}
-              </div>
+              <DiscordMessage key={msg.id} msg={msg} />
             ))}
           </div>
         </>
       )}
 
-      {/* GALLERY TAB */}
       {tab === "gallery" && (
         <div>
           <h3>Image Gallery</h3>
+
+          <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
+            {hasMoreMessages && (
+              <button disabled={messagesLoadingMore} onClick={loadMoreMessages}>
+                {messagesLoadingMore ? "Loading..." : "Load More"}
+              </button>
+            )}
+
+            <button disabled={messagesLoadingMore} onClick={loadAllMessages}>
+              {messagesLoadingMore ? "Loading..." : "Load Full History"}
+            </button>
+          </div>
 
           <div
             style={{
@@ -288,7 +290,6 @@ export default function App() {
                 }}
                 key={img.id}
               >
-                {/* Image */}
                 <img
                   style={{
                     display: "block",
@@ -299,17 +300,10 @@ export default function App() {
                   src={img.url}
                 />
 
-                {/* Author */}
-                <div
-                  style={{
-                    fontWeight: "bold",
-                    marginTop: 10,
-                  }}
-                >
+                <div style={{ fontWeight: "bold", marginTop: 10 }}>
                   {img.author}
                 </div>
 
-                {/* Timestamp */}
                 <div
                   style={{
                     fontSize: 12,
@@ -320,15 +314,124 @@ export default function App() {
                   {new Date(img.timestamp).toLocaleString()}
                 </div>
 
-                {/* Caption / Message */}
                 {img.content && (
                   <div style={{ marginTop: 8 }}>{img.content}</div>
                 )}
+
+                {img.discord_url && (
+                  <div style={{ marginTop: 8 }}>
+                    <a href={img.discord_url} rel="noreferrer" target="_blank">
+                      Open in Discord
+                    </a>
+                  </div>
+                )}
+
+                <ReactionList reactions={img.reactions} />
               </div>
             ))}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function DiscordMessage({ msg }) {
+  return (
+    <div
+      style={{
+        border: "1px solid #ccc",
+        marginBottom: 12,
+        borderRadius: 8,
+        padding: 12,
+      }}
+    >
+      <div style={{ fontWeight: "bold", marginBottom: 6 }}>
+        {msg.author?.username}
+      </div>
+
+      <div
+        style={{
+          marginBottom: 10,
+          fontSize: 12,
+          opacity: 0.7,
+        }}
+      >
+        {new Date(msg.timestamp).toLocaleString()}
+      </div>
+
+      {msg.content && <div style={{ marginBottom: 10 }}>{msg.content}</div>}
+
+      {msg.attachments?.map((att) => {
+        const isImage = att.content_type?.startsWith("image/");
+
+        if (isImage) {
+          return (
+            <img
+              style={{
+                display: "block",
+                borderRadius: 8,
+                maxWidth: 300,
+                marginTop: 10,
+              }}
+              src={att.url}
+              key={att.id}
+              alt=""
+            />
+          );
+        }
+
+        return (
+          <div style={{ marginTop: 10 }} key={att.id}>
+            <a rel="noreferrer" target="_blank" href={att.url}>
+              {att.filename}
+            </a>
+          </div>
+        );
+      })}
+
+      {msg.discord_url && (
+        <div style={{ marginTop: 10 }}>
+          <a href={msg.discord_url} rel="noreferrer" target="_blank">
+            Open in Discord
+          </a>
+        </div>
+      )}
+
+      <ReactionList reactions={msg.reactions} />
+    </div>
+  );
+}
+
+function ReactionList({ reactions }) {
+  if (!reactions?.length) return null;
+
+  return (
+    <div
+      style={{
+        flexWrap: "wrap",
+        display: "flex",
+        marginTop: 10,
+        gap: 8,
+      }}
+    >
+      {reactions.map((reaction) => {
+        const key = reaction.emoji.id || reaction.emoji.name;
+
+        return (
+          <span
+            style={{
+              border: "1px solid #ccc",
+              padding: "4px 8px",
+              borderRadius: 999,
+              fontSize: 13,
+            }}
+            key={key}
+          >
+            {formatReactionEmoji(reaction.emoji)} {reaction.count}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -343,11 +446,18 @@ function getToken() {
   return token;
 }
 
-// ------------------------
-// Helpers
-// ------------------------
 function getTokenFromUrl() {
   const hash = window.location.hash;
   const params = new URLSearchParams(hash.replace("#", ""));
   return params.get("token");
+}
+
+function formatReactionEmoji(emoji) {
+  if (!emoji) return "";
+
+  if (emoji.id) {
+    return `:${emoji.name}:`;
+  }
+
+  return emoji.name;
 }
